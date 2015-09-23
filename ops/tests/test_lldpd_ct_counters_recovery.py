@@ -22,9 +22,10 @@ import sys
 import time
 import pytest
 import subprocess
-from halonvsi.docker import *
-from halonvsi.halon import *
-from halonutils.halonutil import *
+
+from opsvsi.docker import *
+from opsvsi.opsvsitest import *
+from opsvsiutils.systemutil import *
 
 #
 #
@@ -57,7 +58,7 @@ class myTopo(Topo):
         # connect them together
         self.addLink('s1', 's2')
 
-class lldpTest (HalonTest):
+class lldpTest (OpsVsiTest):
 
     def setupNet (self):
 
@@ -67,9 +68,9 @@ class lldpTest (HalonTest):
         self.net = Mininet(topo=myTopo(hsts = 0, sws = 2,
                                        hopts = self.getHostOpts(),
                                        sopts = self.getSwitchOpts()),
-                                       switch = HalonSwitch,
-                                       host = HalonHost,
-                                       link = HalonLink,
+                                       switch = VsiOpenSwitch,
+                                       host = Host,
+                                       link = OpsVsiLink,
                                        controller = None,
                                        build = True)
 
