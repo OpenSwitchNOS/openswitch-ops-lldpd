@@ -7,7 +7,11 @@ endif
 BUILT_SOURCES =
 CLEANFILES =
 
+if OVSDB_INTEGRATION
+sbin_PROGRAMS = ops-lldpd
+else
 sbin_PROGRAMS = lldpd
+endif
 man_MANS = lldpd.8
 
 noinst_LTLIBRARIES = liblldpd.la
@@ -105,14 +109,23 @@ liblldpd_la_SOURCES += \
 endif
 
 ## lldpd
+if OVSDB_INTEGRATION
+ops_lldpd_SOURCES = main.c
+ops_lldpd_LDADD   = liblldpd.la @LIBEVENT_LDFLAGS@
+else
 lldpd_SOURCES = main.c
 lldpd_LDADD   = liblldpd.la @LIBEVENT_LDFLAGS@
+endif
 
 # Add SNMP support if needed
 if USE_SNMP
 liblldpd_la_SOURCES += agent.c agent_priv.c agent.h
 liblldpd_la_CFLAGS  += @NETSNMP_CFLAGS@
+if OVSDB_INTEGRATION
+ops_lldpd_LDADD         += @NETSNMP_LIBS@
+else
 lldpd_LDADD         += @NETSNMP_LIBS@
+endif
 endif
 
 # seccomp support
@@ -142,7 +155,11 @@ probes.h: probes.d
 probes.o: probes.d
 	$(AM_V_GEN)
 	$(AM_V_at)$(DTRACE) -C -G -s $< -o $@
+if OVSDB_INTEGRATION
+ops_lldpd_LDADD += probes.o
+else
 lldpd_LDADD += probes.o
+endif
 
 lldpd.stp: probes.d $(srcdir)/dtrace2systemtap.awk $(top_builddir)/config.status
 	$(AM_V_GEN)$(AWK) -f $(srcdir)/dtrace2systemtap.awk -v sbindir=$(sbindir) $< > $@ || ( rm -f $@ ; exit 1 )
