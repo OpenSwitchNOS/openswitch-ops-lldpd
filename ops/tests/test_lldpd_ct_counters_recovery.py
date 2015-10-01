@@ -194,10 +194,10 @@ class lldpTest (OpsVsiTest):
             time.sleep(1)
             # info(".")
             crashed, pid = self.lldp_process_restarted(1)
-            assert crashed != True, "lldp crashed on switch 1, exiting"
+            assert crashed != 1, "lldp crashed on switch 1, exiting"
 
             crashed, pid = self.lldp_process_restarted(2)
-            assert crashed != True, "lldp crashed on switch 2, exiting"
+            assert crashed != 1, "lldp crashed on switch 2, exiting"
             count = count + 1
     #
     # verify that rx count is > after an lldp crash & recovery
