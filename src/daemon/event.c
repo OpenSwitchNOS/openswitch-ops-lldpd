@@ -159,14 +159,14 @@ levent_snmp_update(struct lldpd *cfg)
 	   1 to means that we don't request a timeout. snmp_select_info()
 	   will reset `block` to 0 if it wants us to setup a timeout. In
 	   this timeout, `snmp_timeout()` should be invoked.
-	   
+
 	   Each FD in `fdset` will need to be watched for reading. If one of
 	   them become active, `snmp_read()` should be called on it.
 	*/
-	
+
 	FD_ZERO(&fdset);
 	snmp_select_info(&maxfd, &fdset, &timeout, &block);
-	
+
 	/* We need to untrack any event whose FD is not in `fdset`
 	   anymore */
 	for (snmpfd = TAILQ_FIRST(levent_snmp_fds(cfg));
@@ -184,7 +184,7 @@ levent_snmp_update(struct lldpd *cfg)
 			current++;
 		}
 	}
-	
+
 	/* Invariant: FD in `fdset` are not in list of FD */
 	for (int fd = 0; fd < maxfd; fd++) {
 		if (FD_ISSET(fd, &fdset)) {
@@ -741,9 +741,29 @@ levent_send_pdu(evutil_socket_t fd, short what, void *arg)
 	struct lldpd_hardware *hardware = arg;
 	int tx_interval = hardware->h_cfg->g_config.c_tx_interval;
 
-	log_debug("event", "trigger sending PDU for port %s",
+	log_info("event", "trigger sending PDU for port %s",
 	    hardware->h_ifname);
-	lldpd_send(hardware);
+#ifdef ENABLE_OVSDB
+        if (hardware->h_reinit_delay) {
+		log_info("event", "trigger sending PDU with reinit delay %d ",
+                                                hardware->h_reinit_delay);
+		struct timeval tv = { hardware->h_reinit_delay, 0 };
+		if (event_add(hardware->h_timer, &tv) == -1) {
+			log_warnx("event", "unable to re-register timer event for port %s",
+				    hardware->h_ifname);
+			event_free(hardware->h_timer);
+			hardware->h_timer = NULL;
+			return;
+		}
+                hardware->h_reinit_delay = 0;
+		return;
+        }
+	else
+#endif
+	{
+		log_info("event", "trigger sending PDU without reinit delay ");
+		lldpd_send(hardware);
+	}
 
 #ifdef ENABLE_LLDPMED
 	if (hardware->h_tx_fast > 0)
@@ -787,6 +807,45 @@ levent_schedule_pdu(struct lldpd_hardware *hardware)
 		return;
 	}
 }
+
+#if 0
+void
+levent_schedule_pdu(struct lldpd_hardware *hardware)
+{
+	log_info("event", "schedule sending PDU on %s",
+	    hardware->h_ifname);
+	if (hardware->h_timer == NULL) {
+		hardware->h_timer = evtimer_new(hardware->h_cfg->g_base,
+		    levent_send_pdu, hardware);
+		if (hardware->h_timer == NULL) {
+			log_warnx("event", "unable to schedule PDU sending for port %s",
+			    hardware->h_ifname);
+			return;
+		}
+	}
+
+#ifdef ENABLE_OVSDB
+	struct timeval tv = { hardware->h_reinit_delay, 0 };
+	log_info("event", "schedule sending PDU with reinit delay %d ",
+						hardware->h_reinit_delay);
+
+	if (hardware->h_reinit_delay) {
+		log_info("event", "schedule sending PDU with reinit delay %d ",
+						hardware->h_reinit_delay);
+		hardware->h_reinit_delay = 0;
+	}
+#else
+	struct timeval tv = { 0, 0 };
+#endif
+	if (event_add(hardware->h_timer, &tv) == -1) {
+		log_warnx("event", "unable to register timer event for port %s",
+		    hardware->h_ifname);
+		event_free(hardware->h_timer);
+		hardware->h_timer = NULL;
+		return;
+	}
+}
+#endif
 
 int
 levent_make_socket_nonblocking(int fd)

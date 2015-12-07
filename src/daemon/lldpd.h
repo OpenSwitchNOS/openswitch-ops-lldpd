@@ -71,6 +71,7 @@ struct event_base;
 #define LLDPD_TX_INTERVAL	30
 #define LLDPD_TX_HOLD          4
 #define LLDPD_TTL              LLDPD_TX_INTERVAL * LLDPD_TX_HOLD
+#define LLDPD_REINIT            2
 #define LLDPD_TX_MSGDELAY	1
 #define LLDPD_MAX_NEIGHBORS	4
 #define LLDPD_FAST_TX_INTERVAL	1

@@ -330,7 +330,7 @@ lldpd_reset_timer(struct lldpd *cfg)
 			    "no change detected for port %s",
 			    hardware->h_ifname);
 		} else {
-			log_debug("localchassis",
+			log_info("localchassis",
 			    "change detected for port %s, resetting its timer",
 			    hardware->h_ifname);
 			levent_schedule_pdu(hardware);
@@ -991,7 +991,7 @@ lldpd_send(struct lldpd_hardware *hardware)
 	if ((hardware->h_flags & IFF_RUNNING) == 0)
 		return;
 
-	log_debug("send", "send PDU on %s", hardware->h_ifname);
+	log_info("send", "send PDU on %s", hardware->h_ifname);
 	sent = 0;
 	for (i=0; cfg->g_protocols[i].mode != 0; i++) {
 		if (!cfg->g_protocols[i].enabled)
