@@ -159,14 +159,14 @@ levent_snmp_update(struct lldpd *cfg)
 	   1 to means that we don't request a timeout. snmp_select_info()
 	   will reset `block` to 0 if it wants us to setup a timeout. In
 	   this timeout, `snmp_timeout()` should be invoked.
-	   
+
 	   Each FD in `fdset` will need to be watched for reading. If one of
 	   them become active, `snmp_read()` should be called on it.
 	*/
-	
+
 	FD_ZERO(&fdset);
 	snmp_select_info(&maxfd, &fdset, &timeout, &block);
-	
+
 	/* We need to untrack any event whose FD is not in `fdset`
 	   anymore */
 	for (snmpfd = TAILQ_FIRST(levent_snmp_fds(cfg));
@@ -184,7 +184,7 @@ levent_snmp_update(struct lldpd *cfg)
 			current++;
 		}
 	}
-	
+
 	/* Invariant: FD in `fdset` are not in list of FD */
 	for (int fd = 0; fd < maxfd; fd++) {
 		if (FD_ISSET(fd, &fdset)) {
@@ -741,9 +741,29 @@ levent_send_pdu(evutil_socket_t fd, short what, void *arg)
 	struct lldpd_hardware *hardware = arg;
 	int tx_interval = hardware->h_cfg->g_config.c_tx_interval;
 
-	log_debug("event", "trigger sending PDU for port %s",
-	    hardware->h_ifname);
-	lldpd_send(hardware);
+#ifdef ENABLE_OVSDB
+        if (hardware->h_reinit_delay) {
+		/* Reduce one second, because the netlink event handler is
+		   called in a timer callback with timer delay of 1 sec.
+		*/
+		struct timeval tv = { hardware->h_reinit_delay - 1, 0 };
+		if (event_add(hardware->h_timer, &tv) == -1) {
+			log_warnx("event", "unable to re-register timer event for port %s",
+				    hardware->h_ifname);
+			event_free(hardware->h_timer);
+			hardware->h_timer = NULL;
+			return;
+		}
+                hardware->h_reinit_delay = 0;
+		return;
+        }
+	else
+#endif
+	{
+		log_debug("event", "trigger sending PDU for port %s",
+			hardware->h_ifname);
+		lldpd_send(hardware);
+	}
 
 #ifdef ENABLE_LLDPMED
 	if (hardware->h_tx_fast > 0)
