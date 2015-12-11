@@ -373,3 +373,5 @@ unmarshal_error:
 	}
 	return total_len;
 }
+
+$ syntax error
