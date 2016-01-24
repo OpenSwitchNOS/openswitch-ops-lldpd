@@ -68,6 +68,7 @@
 #include "openswitch-idl.h"
 #include "lldpd_ovsdb_if.h"
 #include "vlan-bitmap.h"
+#include  <diag_dump.h>
 
 COVERAGE_DEFINE(lldpd_ovsdb_if);
 VLOG_DEFINE_THIS_MODULE(lldpd_ovsdb_if);
@@ -82,6 +83,8 @@ VLOG_DEFINE_THIS_MODULE(lldpd_ovsdb_if);
 #define VLAN_LIST_STR_MAX (4096 * 256)
 #define VLAN_LIST_INT_MAX (4096 * 16)
 #define MGMTIP_LIST_MAX (MGMT_IF_MAX * INET6_ADDRSTRLEN)
+#define BUF_LEN 4000
+#define REM_BUF_LEN (buflen - 1 - strlen(buf))
 
 static struct ovsdb_idl *idl;
 static unsigned int idl_seqno;
@@ -109,6 +112,7 @@ unixctl_cb_func lldpd_unixctl_test;
 void lldpd_unixctl_test(struct unixctl_conn *conn, int argc,
                         const char *argv[], void *aux OVS_UNUSED);
 void ovsdb_test_nbr_mgmt_addr_list(struct lldpd_chassis *p_chassis);
+static void lldpd_diag_dump_basic_cb(const char *feature , char **buf);
 
 bool exiting = false;
 
@@ -2267,14 +2271,18 @@ lldpd_reconfigure(struct ovsdb_idl *idl, struct lldpd *g_lldp_cfg)
 	idl_seqno = new_idl_seqno;
 }                               /* lldpd_reconfigure */
 
+
+/*
+ * Function       : lldpd_dump
+ * Responsibility : populates buffer for unixctl reply
+ * Parameters     : buffer , buffer length
+ * Returns        : void
+ */
+
 static void
-lldpd_unixctl_dump(struct unixctl_conn *conn, int argc OVS_UNUSED,
-                   const char *argv[]OVS_UNUSED, void *aux OVS_UNUSED)
+lldpd_dump(char* buf, int buflen)
 {
-#define BUF_LEN 4000
-#define REM_BUF_LEN (BUF_LEN - 1 - strlen(buf))
 	struct shash_node *sh_node;
-	char *buf = xcalloc(1, BUF_LEN);
 	int first_row_done = 0;
 
 	/*
@@ -2327,8 +2335,20 @@ lldpd_unixctl_dump(struct unixctl_conn *conn, int argc OVS_UNUSED,
 
 		strncat(buf, "\n", REM_BUF_LEN);
 	}
-	unixctl_command_reply(conn, buf);
-	free(buf);
+}
+static void
+lldpd_unixctl_dump(struct unixctl_conn *conn, int argc OVS_UNUSED,
+                   const char *argv[]OVS_UNUSED, void *aux OVS_UNUSED)
+{
+	char *buf = xcalloc(1, BUF_LEN);
+    if (buf){
+        lldpd_dump(buf,BUF_LEN);
+        unixctl_command_reply(conn, buf);
+        free(buf);
+    } else {
+        unixctl_command_reply(conn, "lldpd failed to allocate memory");
+    }
+    return;
 }                               /* lldpd_unixctl_dump */
 
 static void
@@ -2500,6 +2520,8 @@ ovsdb_init(const char *db_path)
 	unixctl_command_register("lldpd/test",
 				 "libevent|ovsdb <test case no>",
 				 2, 2, lldpd_unixctl_test, NULL);
+    INIT_DIAG_DUMP_BASIC(lldpd_diag_dump_basic_cb);
+
 }                               /* ovsdb_init */
 
 static void
@@ -3256,4 +3278,28 @@ cleanup:
 	}
 
 	return 0;
+}
+
+/*
+ * Function       : lldpd_diag_dump_basic_cb
+ * Responsibility : callback handler function for diagnostic dump basic
+ *                  it allocates memory as per requirment and populates data.
+ *                  INIT_DIAG_DUMP_BASIC will free allocated memory.
+ * Parameters     : feature name string,buffer ptr
+ * Returns        : void
+ */
+
+static void lldpd_diag_dump_basic_cb(const char *feature , char **buf)
+{
+    if (!buf && !*buf)
+        return;
+    *buf =  xcalloc(1,BUF_LEN);
+    if (*buf) {
+        /* populate basic diagnostic data to buffer  */
+        lldpd_dump(*buf,BUF_LEN);
+        VLOG_INFO("basic diag-dump data populated for feature %s",feature);
+    } else{
+        VLOG_INFO("Memory allocation failed for feature %s",feature);
+    }
+    return ;
 }
