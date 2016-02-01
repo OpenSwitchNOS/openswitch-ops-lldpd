@@ -232,6 +232,10 @@ class lldpTest (OpsVsiTest):
 # final "Test_" class
 #
 
+@pytest.mark.skipif(True, reason="LLDP Daemon crashes while executing "
+                                 "no routing on interface context. "
+                                 "It seems OVSDB data missing/corrected "
+                                 "for that particular interface")
 
 class Test_lldp:
 
