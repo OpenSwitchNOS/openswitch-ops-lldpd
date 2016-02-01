@@ -232,7 +232,9 @@ class lldpTest (OpsVsiTest):
 # final "Test_" class
 #
 
-
+@pytest.mark.skipif(True, reason="daemon crashed due to OVSDB data corrupted"
+                                 "while executing shutdown and no routing CLI"
+                                 "test case is enabled once it is fixed")
 class Test_lldp:
 
     def setup(self):
