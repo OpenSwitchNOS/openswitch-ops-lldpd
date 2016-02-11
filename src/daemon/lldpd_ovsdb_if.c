@@ -676,6 +676,9 @@ handle_interfaces_config_mods(struct shash *sh_idl_interfaces,
 		const struct ovsrec_interface *ifrow =
 			shash_find_data(sh_idl_interfaces, sh_node->name);
 
+		/* Update ifrow handle */
+		itf->ifrow = ifrow;
+
 		if (ifrow && (OVSREC_IDL_IS_ROW_INSERTED(ifrow, idl_seqno) ||
 			      OVSREC_IDL_IS_ROW_MODIFIED(ifrow, idl_seqno))) {
 
@@ -1157,6 +1160,7 @@ handle_port_config_mods(struct shash *sh_idl_ports, struct lldpd *cfg)
 		/* Check for changes to row */
 		if (OVSREC_IDL_IS_ROW_INSERTED(port_row, idl_seqno) ||
 		    OVSREC_IDL_IS_ROW_MODIFIED(port_row, idl_seqno)) {
+			((struct port_data *)sh_node->data)->portrow = port_row;
 			lldpd_reconfigure_port((struct port_data *)sh_node->data);
 			rc++;
 		}
