@@ -231,6 +231,8 @@ class lldpTest (OpsVsiTest):
 #
 # final "Test_" class
 #
+@pytest.mark.skipif(True, reason="Skipping temporarily due to LLDP"
+                                "Multi neighbor support")
 class Test_lldp:
 
     def setup(self):

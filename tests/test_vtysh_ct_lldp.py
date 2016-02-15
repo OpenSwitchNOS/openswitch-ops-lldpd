@@ -464,7 +464,8 @@ class LLDPCliTest(OpsVsiTest):
 
         return True
 
-
+@pytest.mark.skipif(True, reason="Skipping temporarily due to LLDP"
+                                "Multi neighbor support")
 class Test_lldp_cli:
 
     def setup(self):

@@ -1193,9 +1193,11 @@ DEFUN (cli_lldp_show_neighbor_info,
        "Show global LLDP neighbor information\n")
 {
   const struct ovsrec_interface *ifrow = NULL;
+  const struct ovsrec_lldp_neighbor *lldp_row = NULL;
   const struct ovsrec_subsystem *row = NULL;
   lldp_neighbor_info *nbr_info = NULL;
   uint  iter = 0, nIntf = 0;
+  bool nbr_found = false;
   const struct ovsdb_datum *datum = NULL;
   static char *lldp_interface_neighbor_info_keys [] = {
     INTERFACE_STATISTICS_LLDP_INSERT_COUNT,
@@ -1270,23 +1272,6 @@ DEFUN (cli_lldp_show_neighbor_info,
     nbr_info[iter].ageout_count = (index == UINT_MAX)? 0 : datum->values[index].integer;
     total_ageout_count += nbr_info[iter].ageout_count;
 
-    datum = ovsrec_interface_get_lldp_neighbor_info(ifrow, OVSDB_TYPE_STRING, OVSDB_TYPE_STRING);
-
-    atom.string = lldp_interface_neighbor_info_keys[4];
-    index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
-    if(index != UINT_MAX)
-       strncpy(nbr_info[iter].chassis_id, datum->values[index].string, 256);
-
-    atom.string = lldp_interface_neighbor_info_keys[5];
-    index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
-    if(index != UINT_MAX)
-       strncpy(nbr_info[iter].port_id, datum->values[index].string, 256);
-
-    atom.string = lldp_interface_neighbor_info_keys[6];
-    index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
-    if(index != UINT_MAX)
-      strncpy(nbr_info[iter].chassis_ttl, datum->values[index].string, 256);
-
     iter++;
   }
 
@@ -1306,14 +1291,32 @@ DEFUN (cli_lldp_show_neighbor_info,
   qsort((void*)nbr_info,nIntf,sizeof(lldp_neighbor_info),compare_intf);
 
   iter = 0;
-  while(iter < nIntf)
-  {
-    vty_out (vty, "%-15s", nbr_info[iter].name);
-    vty_out (vty, "%-25s", nbr_info[iter].chassis_id);
-    vty_out (vty, "%-25s", nbr_info[iter].port_id);
-    vty_out (vty, "%-10s", nbr_info[iter].chassis_ttl);
-    printf("\n");
-    iter++;
+  while(iter < nIntf) {
+    union ovsdb_atom atom;
+    OVSREC_LLDP_NEIGHBOR_FOR_EACH(lldp_row, idl) {
+        if(0 == strcmp(nbr_info[iter].name, lldp_row->interface->name)) {
+        vty_out (vty, "%-15s", nbr_info[iter].name);
+
+        datum = ovsrec_lldp_neighbor_get_neighbor_info(lldp_row, OVSDB_TYPE_STRING, OVSDB_TYPE_STRING);
+        vty_out(vty, "%-25s",lldp_row->chassis_id);
+
+        vty_out(vty, "%-25s",lldp_row->port_id);
+
+        atom.string = lldp_interface_neighbor_info_keys[6];
+        index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
+        vty_out(vty, "%-10s",(index == UINT_MAX)? "" : datum->values[index].string);
+        vty_out(vty, "%s", VTY_NEWLINE);
+        nbr_found=true;
+        }
+    }
+    if(nbr_found==false) {
+        vty_out (vty, "%-15s", nbr_info[iter].name);
+        vty_out(vty, "%s", VTY_NEWLINE);
+    }
+    else {
+        nbr_found=false;
+    }
+  iter++;
   }
 
   if(nbr_info)
@@ -1325,9 +1328,6 @@ DEFUN (cli_lldp_show_neighbor_info,
   return CMD_SUCCESS;
 }
 
-
-
-
 DEFUN (cli_lldp_show_intf_neighbor_info,
        lldp_show_intf_neighbor_info_cmd,
        "show lldp neighbor-info IFNAME",
@@ -1337,7 +1337,9 @@ DEFUN (cli_lldp_show_intf_neighbor_info,
        "Specify the interface name")
 {
   const struct ovsrec_interface *ifrow = NULL;
-  bool port_found = false;
+  const struct ovsrec_lldp_neighbor *lldp_row = NULL;
+  bool port_found = false, nbr_found = false;
+  int num = 0;
   const struct ovsdb_datum *datum = NULL;
   static char *lldp_interface_neighbor_info_keys [] = {
     INTERFACE_STATISTICS_LLDP_INSERT_COUNT,
@@ -1363,6 +1365,7 @@ DEFUN (cli_lldp_show_intf_neighbor_info,
         union ovsdb_atom atom;
 
         port_found = true;
+
         vty_out (vty, "Port                           : %s%s", ifrow->name, VTY_NEWLINE);
 
         datum = ovsrec_interface_get_lldp_statistics(ifrow, OVSDB_TYPE_STRING, OVSDB_TYPE_INTEGER);
@@ -1382,43 +1385,58 @@ DEFUN (cli_lldp_show_intf_neighbor_info,
         index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
         vty_out(vty, "Neighbor entries age-out       : %ld\n",(index == UINT_MAX)? 0 : datum->values[index].integer);
 
-        datum = ovsrec_interface_get_lldp_neighbor_info(ifrow, OVSDB_TYPE_STRING, OVSDB_TYPE_STRING);
+        lldp_row= ovsrec_lldp_neighbor_first(idl);
+        OVSREC_LLDP_NEIGHBOR_FOR_EACH(lldp_row, idl) {
+          if(0 == strcmp(ifrow->name, lldp_row->interface->name)) {
+            vty_out(vty,"%s",VTY_NEWLINE);
+            vty_out(vty,"Neighbor Entry                  : %d%s",++num,VTY_NEWLINE);
+            datum = ovsrec_lldp_neighbor_get_neighbor_info(lldp_row, OVSDB_TYPE_STRING, OVSDB_TYPE_STRING);
 
-        atom.string = lldp_interface_neighbor_info_keys[9];
-        index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
-        vty_out(vty, "Neighbor Chassis-Name          : %s\n",(index == UINT_MAX)? "" : datum->values[index].string);
+            atom.string = lldp_interface_neighbor_info_keys[9];
+            index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
+            vty_out(vty, "Neighbor Chassis-Name          : %s\n",(index == UINT_MAX)? "" : datum->values[index].string);
 
-        atom.string = lldp_interface_neighbor_info_keys[10];
-        index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
-        vty_out(vty, "Neighbor Chassis-Description   : %s\n",(index == UINT_MAX)? "" : datum->values[index].string);
+            atom.string = lldp_interface_neighbor_info_keys[10];
+            index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
+            vty_out(vty, "Neighbor Chassis-Description   : %s\n",(index == UINT_MAX)? "" : datum->values[index].string);
 
-        atom.string = lldp_interface_neighbor_info_keys[4];
-        index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
-        vty_out(vty, "Neighbor Chassis-ID            : %s\n",(index == UINT_MAX)? "" : datum->values[index].string);
+            vty_out(vty, "Neighbor Chassis-ID            : %s\n",lldp_row->chassis_id);
 
-        atom.string = lldp_interface_neighbor_info_keys[11];
-        index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
-        vty_out(vty, "Neighbor Management-Address    : %s\n",(index == UINT_MAX)? "" : datum->values[index].string);
+            atom.string = lldp_interface_neighbor_info_keys[11];
+            index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
+            vty_out(vty, "Neighbor Management-Address    : %s\n",(index == UINT_MAX)? "" : datum->values[index].string);
 
-        atom.string = lldp_interface_neighbor_info_keys[7];
-        index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
-        vty_out(vty, "Chassis Capabilities Available : %s\n",(index == UINT_MAX)? "" : datum->values[index].string);
+            atom.string = lldp_interface_neighbor_info_keys[7];
+            index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
+            vty_out(vty, "Chassis Capabilities Available : %s\n",(index == UINT_MAX)? "" : datum->values[index].string);
 
-        atom.string = lldp_interface_neighbor_info_keys[8];
-        index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
-        vty_out(vty, "Chassis Capabilities Enabled   : %s\n",(index == UINT_MAX)? "" : datum->values[index].string);
+            atom.string = lldp_interface_neighbor_info_keys[8];
+            index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
+            vty_out(vty, "Chassis Capabilities Enabled   : %s\n",(index == UINT_MAX)? "" : datum->values[index].string);
 
-        atom.string = lldp_interface_neighbor_info_keys[5];
-        index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
-        vty_out(vty, "Neighbor Port-ID               : %s\n",(index == UINT_MAX)? "" : datum->values[index].string);
+            vty_out(vty, "Neighbor Port-ID               : %s\n",lldp_row->port_id);
 
-        atom.string = lldp_interface_neighbor_info_keys[6];
-        index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
-        vty_out(vty, "TTL                            : %s\n",(index == UINT_MAX)? "" : datum->values[index].string);
-        break;
+            atom.string = lldp_interface_neighbor_info_keys[6];
+            index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
+            vty_out(vty, "TTL                            : %s\n",(index == UINT_MAX)? "" : datum->values[index].string);
+            nbr_found = true;
+           }
+      }
+      break;
+
      }
   }
 
+  if(!nbr_found) {
+        vty_out(vty, "Neighbor Chassis-Name          : %s\n","");
+        vty_out(vty, "Neighbor Chassis-Description   : %s\n","");
+        vty_out(vty, "Neighbor Chassis-ID            : %s\n","");
+        vty_out(vty, "Neighbor Management-Address    : %s\n","");
+        vty_out(vty, "Chassis Capabilities Available : %s\n","");
+        vty_out(vty, "Chassis Capabilities Enabled   : %s\n","");
+        vty_out(vty, "Neighbor Port-ID               : %s\n","");
+        vty_out(vty, "TTL                            : %s\n","");
+  }
   if(!port_found)
   {
     VLOG_ERR("Wrong interface name");
@@ -1952,9 +1970,14 @@ lldp_ovsdb_init()
     ovsdb_idl_add_table(idl, &ovsrec_table_system);
     ovsdb_idl_add_column(idl, &ovsrec_system_col_cur_cfg);
     ovsdb_idl_add_column(idl, &ovsrec_system_col_other_config);
-    ovsdb_idl_add_column(idl, &ovsrec_system_col_lldp_statistics);
     ovsdb_idl_add_column(idl, &ovsrec_system_col_status);
     ovsdb_idl_add_column(idl, &ovsrec_system_col_system_mac);
+
+    ovsdb_idl_add_table(idl, &ovsrec_table_lldp_neighbor);
+    ovsdb_idl_add_column(idl, &ovsrec_lldp_neighbor_col_interface);
+    ovsdb_idl_add_column(idl, &ovsrec_lldp_neighbor_col_port_id);
+    ovsdb_idl_add_column(idl, &ovsrec_lldp_neighbor_col_chassis_id);
+    ovsdb_idl_add_column(idl, &ovsrec_lldp_neighbor_col_neighbor_info);
 }
 
 /*
