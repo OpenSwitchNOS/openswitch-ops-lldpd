@@ -1,4 +1,4 @@
-/* -*- mode: c; c-file-style: "openbsd" -*- */
+///* -*- mode: c; c-file-style: "openbsd" -*- */
 /*
  * Copyright (c) 2008 Vincent Bernat <bernat@luffy.cx>
  *
@@ -120,7 +120,6 @@ lldpd_remote_cleanup(struct lldpd_hardware *hardware,
 {
 	struct lldpd_port *port, *port_next;
 	int del;
-	time_t now = time(NULL);
 
 	log_debug("alloc", "cleanup remote port on %s",
 	    hardware->h_ifname);
@@ -129,14 +128,6 @@ lldpd_remote_cleanup(struct lldpd_hardware *hardware,
 	     port = port_next) {
 		port_next = TAILQ_NEXT(port, p_entries);
 		del = all;
-		if (!all && expire &&
-		    (now >= port->p_lastupdate + port->p_chassis->c_ttl)) {
-			hardware->h_ageout_cnt++;
-#ifndef ENABLE_OVSDB
-                        hardware->h_delete_cnt++;
-#endif
-			del = 1;
-		}
 		if (del) {
 
 #ifdef ENABLE_OVSDB

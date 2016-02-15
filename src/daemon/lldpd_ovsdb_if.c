@@ -760,6 +760,7 @@ lldpd_apply_interface_changes(struct ovsdb_idl *idl,
 
 	system = ovsrec_system_first(idl);
 
+
 	/* Collect all the interfaces in the DB. */
 	shash_init(&sh_idl_interfaces);
 	OVSREC_INTERFACE_FOR_EACH(ifrow, idl) {
@@ -933,7 +934,6 @@ set_lldp_trunk_vlans(const struct ovsrec_port *row,
 {
 
 	int i;
-
 	for (i = 0; i < row->n_trunks; i++) {
 		set_lldp_vlan_name_tlv(row->trunks[i], interface->hw);
 	}
@@ -1073,6 +1073,10 @@ lldpd_reconfigure_port(struct port_data *port)
 	for (k = 0; k < row->n_interfaces; k++) {
 		struct interface_data *intf;
 		struct ovsrec_interface *iface = row->interfaces[k];
+		if((iface->name)) {
+                        VLOG_INFO("Interface name is NULL\n");
+                        return ;
+                }
 
 		intf = shash_find_data(&all_interfaces, iface->name);
                 if (!intf) {
@@ -1964,13 +1968,14 @@ lldpd_stats_run(struct lldpd *cfg)
 static bool
 lldpd_ovsdb_clear_all_nbrs_run(struct ovsdb_idl *idl)
 {
-	const struct ovsrec_interface *ifrow;
 	bool nbr_change = false;
+	const struct ovsrec_lldp_neighbor *lldp = NULL;
+	OVSREC_LLDP_NEIGHBOR_FOR_EACH(lldp, idl) {
+                      ovsrec_lldp_neighbor_delete(lldp);
+        /* Scan all hardware interfaces in lldpd and reset nbr data */
 
-	/* Scan all hardware interfaces in lldpd and reset nbr data */
-	OVSREC_INTERFACE_FOR_EACH(ifrow, idl) {
-		ovsrec_interface_set_lldp_neighbor_info(ifrow, NULL);
-		nbr_change = true;
+        //      ovsrec_interface_set_lldp_neighbor_info(ifrow, NULL);
+                nbr_change = true;
 	}
 	return (nbr_change);
 }
@@ -1982,8 +1987,8 @@ lldpd_clear_counters(struct ovsdb_idl *idl, struct lldpd *cfg)
 {
 
 	struct lldpd_hardware *hardware, *hardware_next;
-	const struct ovsrec_interface *ifrow;
 	const struct ovsrec_system *sys_row = NULL;
+	const struct ovsrec_lldp_neighbor *lldp = NULL;
 	bool counter_change = false;
 	int clear_counter_requested = 0;
 	int last_clear_counter = 0;
@@ -1991,8 +1996,8 @@ lldpd_clear_counters(struct ovsdb_idl *idl, struct lldpd *cfg)
 	char clear_counter_str[10] = {0};
 
 	sys_row = ovsrec_system_first(idl);
-	if (!sys_row) {
-		return false;
+	if (!sys_row){
+		return counter_change;
 	}
 
 	/* Clear LLDP Counters.
@@ -2004,10 +2009,10 @@ lldpd_clear_counters(struct ovsdb_idl *idl, struct lldpd *cfg)
 	last_clear_counter = smap_get_int(&sys_row->status,
 			"lldp_last_clear_counters_performed", 0);
 	sprintf(clear_counter_str, "%d", clear_counter_requested);
-	if (clear_counter_requested>last_clear_counter){
-		OVSREC_INTERFACE_FOR_EACH(ifrow, idl) {
-			ovsrec_interface_set_lldp_neighbor_info(ifrow, NULL);
-		}
+	if (clear_counter_requested > last_clear_counter){
+		OVSREC_LLDP_NEIGHBOR_FOR_EACH(lldp, idl){
+                      ovsrec_lldp_neighbor_delete(lldp);
+                }
 		for (hardware = TAILQ_FIRST(&cfg->g_hardware); hardware != NULL;
 			hardware = hardware_next) {
 			hardware_next = TAILQ_NEXT(hardware, h_entries);
@@ -2043,14 +2048,13 @@ static bool
 lldpd_clear_nbr_table(struct ovsdb_idl *idl, struct lldpd *cfg)
 {
 	struct lldpd_hardware *hardware, *hardware_next;
-	const struct ovsrec_interface *ifrow;
 	const struct ovsrec_system *sys_row = NULL;
+	const struct ovsrec_lldp_neighbor *lldp = NULL;
 	bool nbr_change = false;
 	int clear_table_requested = 0;
 	int clear_table_performed = 0;
 	struct smap smap_status;
 	char clear_table_str[10] = {0};
-
 	sys_row = ovsrec_system_first(idl);
         if (!sys_row) {
 		return false;
@@ -2069,9 +2073,9 @@ lldpd_clear_nbr_table(struct ovsdb_idl *idl, struct lldpd *cfg)
 	sprintf(clear_table_str, "%d", clear_table_requested);
 	if (clear_table_requested > clear_table_performed)
 	{
-		OVSREC_INTERFACE_FOR_EACH(ifrow, idl) {
-			ovsrec_interface_set_lldp_neighbor_info(ifrow, NULL);
-		}
+		OVSREC_LLDP_NEIGHBOR_FOR_EACH(lldp, idl){
+                      ovsrec_lldp_neighbor_delete(lldp);
+                }
 		for (hardware = TAILQ_FIRST(&cfg->g_hardware); hardware != NULL;
 			hardware = hardware_next) {
 			hardware_next = TAILQ_NEXT(hardware, h_entries);
@@ -2107,12 +2111,14 @@ lldpd_clear_nbr_table(struct ovsdb_idl *idl, struct lldpd *cfg)
  * from OVSDB.
  */
 static bool
-lldpd_ovsdb_nbrs_run(struct ovsdb_idl *idl, struct lldpd *cfg)
+ lldpd_ovsdb_nbrs_run(struct ovsdb_idl *idl, struct lldpd *cfg, struct ovsdb_idl_txn *txn)
 {
 	struct lldpd_hardware *hardware;
 	const struct ovsrec_interface *ifrow;
 	struct lldpd_port *port;
 	struct smap smap_nbr;
+	char *decode_str = NULL;
+	const struct ovsrec_lldp_neighbor *lldp = NULL, *del_lldp = NULL;
 	const char *last_update_str;
 	const char *port_ttl_str;
 	time_t last_update_db;
@@ -2120,7 +2126,7 @@ lldpd_ovsdb_nbrs_run(struct ovsdb_idl *idl, struct lldpd *cfg)
 	bool nbr_change = false;
 	struct shash_node *if_node;
 	struct interface_data *itf;
-
+	decode_str = xcalloc(1, STR_BUF_DECODE_MAX);
 	/*
 	* Check for clear lldp neighbor info request.
 	*/
@@ -2153,56 +2159,79 @@ lldpd_ovsdb_nbrs_run(struct ovsdb_idl *idl, struct lldpd *cfg)
 			if (strcmp(ifrow->name, hardware->h_ifname) == 0) {
 				/* If no neighbor info in DB, write everything */
 				if (hardware->h_rport_change_opcode == LLDPD_AF_NBR_UPD) {
-					port_ttl_str =
-						smap_get(&ifrow->lldp_neighbor_info, "chassis_ttl");
-					if (port_ttl_str == NULL) {
-						hardware->h_rport_change_opcode = LLDPD_AF_NBR_ADD;
+					OVSREC_LLDP_NEIGHBOR_FOR_EACH(lldp, idl)
+					{
+					if(!(strcmp(ifrow->name,lldp->interface->name))) {
+						port_ttl_str =
+							smap_get(&lldp->neighbor_info, "chassis_ttl");
+						if (port_ttl_str == NULL) {
+							hardware->h_rport_change_opcode = LLDPD_AF_NBR_ADD;
+							}
+						}
 					}
+
 				}
 				switch (hardware->h_rport_change_opcode) {
 
 				case LLDPD_AF_NBR_ADD:
 				case LLDPD_AF_NBR_MOD:
 					VLOG_INFO("%s i/f %s ADD/MOD", __FUNCTION__, ifrow->name);
-                                        log_event("LLDP_NEIGHBOUR_ADD", EV_KV("interface", "%s",
-                                            ifrow->name));
 					TAILQ_FOREACH(port, &hardware->h_rports, p_entries) {
-						lldp_nbr_update(&smap_nbr, port);
-						ovsrec_interface_set_lldp_neighbor_info(ifrow,
-											&smap_nbr);
-						smap_destroy(&smap_nbr);
-						nbr_change = true;
-						break;
+						if(!TAILQ_NEXT(port, p_entries)) {
+                                                        break;
+						}
 					}
+					lldp = ovsrec_lldp_neighbor_insert(txn);
+					lldp_nbr_update(&smap_nbr, port);
+					ovsrec_lldp_neighbor_set_interface(lldp, ifrow);
+					decode_nw_addr(decode_str, port->p_chassis->c_id, port->p_chassis->c_id_len);
+					ovsrec_lldp_neighbor_set_port_id(lldp, port->p_id);
+					ovsrec_lldp_neighbor_set_chassis_id(lldp, decode_str);
+					ovsrec_lldp_neighbor_set_neighbor_info(lldp, &smap_nbr);
+					if (ovsdb_idl_txn_commit(txn) == TXN_INCOMPLETE){
+						nbr_change = true;
+					}
+					smap_destroy(&smap_nbr);
 					break;
 
 				case LLDPD_AF_NBR_UPD:
-					VLOG_DBG("%s i/f %s UPD", __FUNCTION__, ifrow->name);
-                                        log_event("LLDP_NEIGHBOUR_UPDATE", EV_KV("interface", "%s",
-                                            ifrow->name));
+					VLOG_DBG(" %s i/f %s UPD", __FUNCTION__, ifrow->name);
 					TAILQ_FOREACH(port, &hardware->h_rports, p_entries) {
 						char last_update_s[10];
-
 						sprintf(last_update_s, "%llx",
 							(long long) port->p_lastupdate);
 						VLOG_DBG("Updating nbr time to %s", last_update_s);
-						smap_clone(&smap_nbr, &ifrow->lldp_neighbor_info);
-						smap_replace(&smap_nbr, "port_lastupdate",
-							     last_update_s);
-						ovsrec_interface_set_lldp_neighbor_info(ifrow,
-											&smap_nbr);
-						smap_destroy(&smap_nbr);
-						nbr_change = true;
-						break;
+						decode_nw_addr(decode_str, port->p_chassis->c_id, port->p_chassis->c_id_len);
+						lldp_nbr_update(&smap_nbr, port);
+						OVSREC_LLDP_NEIGHBOR_FOR_EACH(lldp, idl)
+						{
+							if(!(strcmp(ifrow->name,lldp->interface->name)) && !strcmp(decode_str,lldp->chassis_id) && !strcmp(port->p_id, lldp->port_id))
+							{
+							smap_clone(&smap_nbr, &lldp->neighbor_info);
+							smap_replace(&smap_nbr, "port_lastupdate", last_update_s);
+							ovsrec_lldp_neighbor_set_neighbor_info(lldp, &smap_nbr);
+							smap_destroy(&smap_nbr);
+							nbr_change = true;
+							break;
+							}
+						}
 					}
 					break;
 
 				case LLDPD_AF_NBR_DEL:
-					VLOG_INFO("%s i/f %s DEL", __FUNCTION__, ifrow->name);
-                                        log_event("LLDP_NEIGHBOUR_DELETE", EV_KV("interface", "%s",
-                                            ifrow->name));
-					ovsrec_interface_set_lldp_neighbor_info(ifrow, NULL);
-					nbr_change = true;
+					 VLOG_INFO("%s i/f %s DEL", __FUNCTION__, ifrow->name);
+					TAILQ_FOREACH(port, &hardware->h_rports, p_entries){
+						decode_nw_addr(decode_str, port->p_chassis->c_id, port->p_chassis->c_id_len);
+						lldp_nbr_update(&smap_nbr, port);
+						OVSREC_LLDP_NEIGHBOR_FOR_EACH(lldp, idl){
+							if(!(strcmp(ifrow->name,lldp->interface->name)) && !strcmp(decode_str,lldp->chassis_id) && !strcmp(port->p_id, lldp->port_id) && (hardware->h_rport_change_opcode ==LLDPD_AF_NBR_DEL))
+							{
+								del_lldp=lldp;
+							}
+						}
+						ovsrec_lldp_neighbor_delete(del_lldp);
+						nbr_change = true;
+					}
 					break;
 
 				case LLDPD_AF_NBR_NOOP:
@@ -2226,29 +2255,39 @@ lldpd_ovsdb_nbrs_run(struct ovsdb_idl *idl, struct lldpd *cfg)
          * in which lldpd fails to report aged out nbr entries in a timely
          * manner.
 	 */
-
-	OVSREC_INTERFACE_FOR_EACH(ifrow, idl) {
+	OVSREC_LLDP_NEIGHBOR_FOR_EACH(lldp, idl){
 		last_update_str =
-			smap_get(&ifrow->lldp_neighbor_info, "port_lastupdate");
-		port_ttl_str = smap_get(&ifrow->lldp_neighbor_info, "chassis_ttl");
+			smap_get(&lldp->neighbor_info, "port_lastupdate");
+		port_ttl_str = smap_get(&lldp->neighbor_info, "chassis_ttl");
 		if ((last_update_str != NULL) && (port_ttl_str != NULL)) {
 			last_update_db = strtoll(last_update_str, 0, 16);
 			port_ttl = atoi(port_ttl_str);
 			VLOG_DBG
 				("%s timestamps: cur=%0llx last_update=%llx port_ttl=%d (sec)",
 				 __FUNCTION__, (long long) time(NULL),
-				 (long long) last_update_db, port_ttl);
+				(long long) last_update_db, port_ttl);
 			if (time(NULL) - last_update_db > port_ttl + 2) {
 				VLOG_INFO("%s aging out interfcae %s", __FUNCTION__,
-					  ifrow->name);
-				ovsrec_interface_set_lldp_neighbor_info(ifrow, NULL);
-				nbr_change = true;
-			}
+				lldp->interface->name);
+				ovsrec_lldp_neighbor_delete(lldp);
+				SHASH_FOR_EACH(if_node, &all_interfaces) {
+					itf = if_node->data;
+					if (itf && itf->hw && itf->ifrow) {
+						hardware = itf->hw;
+						ifrow = itf->ifrow;
+						if(!strcmp(ifrow->name, lldp->interface->name)) {
+						hardware->h_ageout_cnt++;
+						hardware->h_delete_cnt++;
+						hardware->h_insert_cnt--;
+						nbr_change = true;
+						}
+					}
+				}
+                        }
 		}
 	}
 	return nbr_change;
 }
-
 /*
  * This function is called to sync up LLDP internal neighbor info
  * with OVSDB by copying LLDP table info to OVSDB for each LLDP interface
@@ -2256,13 +2295,15 @@ lldpd_ovsdb_nbrs_run(struct ovsdb_idl *idl, struct lldpd *cfg)
  * since, at that point, OVSDB neighbor info could be out of sync.
  */
 static void
-lldpd_ovsdb_nbrs_change_all(struct ovsdb_idl *idl, struct lldpd *cfg)
+lldpd_ovsdb_nbrs_change_all(struct ovsdb_idl *idl, struct lldpd *cfg,  struct ovsdb_idl_txn *txn)
 {
 	struct lldpd_hardware *hardware;
 	const struct ovsrec_interface *ifrow;
+	const struct ovsrec_lldp_neighbor *lldp=NULL, *del_lldp = NULL;;
 	struct lldpd_port *port;
 	struct smap smap_nbr;
 	bool found = false;
+	char *decode_str = NULL;
 
 	/*
 	 * Scan all hardware interfaces in lldpd.
@@ -2275,17 +2316,37 @@ lldpd_ovsdb_nbrs_change_all(struct ovsdb_idl *idl, struct lldpd *cfg)
 		OVSREC_INTERFACE_FOR_EACH(ifrow, idl) {
 			if (strcmp(ifrow->name, hardware->h_ifname) == 0) {
 				TAILQ_FOREACH(port, &hardware->h_rports, p_entries) {
-					lldp_nbr_update(&smap_nbr, port);
-					ovsrec_interface_set_lldp_neighbor_info(ifrow, &smap_nbr);
-					smap_destroy(&smap_nbr);
-					found = true;
+				if(!TAILQ_NEXT(port, p_entries)) {
 					break;
 				}
-				if (!found) {
-					ovsrec_interface_set_lldp_neighbor_info(ifrow, NULL);
-				}
+			}
+			lldp = ovsrec_lldp_neighbor_insert(txn);
+			decode_nw_addr(decode_str, port->p_chassis->c_id, port->p_chassis->c_id_len);
+			lldp_nbr_update(&smap_nbr, port);
+			ovsrec_lldp_neighbor_set_interface(lldp, ifrow);
+			ovsrec_lldp_neighbor_set_port_id(lldp, port->p_id);
+			ovsrec_lldp_neighbor_set_chassis_id(lldp, decode_str);
+			ovsrec_lldp_neighbor_set_neighbor_info(lldp, &smap_nbr);
+			smap_destroy(&smap_nbr);
+			if (ovsdb_idl_txn_commit(txn) == TXN_INCOMPLETE){
+				found = true;
+				break;
+			}
 
-				hardware->h_rport_change_opcode = LLDPD_AF_NBR_NOOP;
+			if (!found) {
+				decode_nw_addr(decode_str, port->p_chassis->c_id, port->p_chassis->c_id_len);
+				lldp_nbr_update(&smap_nbr, port);
+				OVSREC_LLDP_NEIGHBOR_FOR_EACH(lldp, idl){
+					if(!(strcmp(ifrow->name,lldp->interface->name)) && !strcmp(decode_str,lldp->chassis_id) && !strcmp(port->p_id, lldp->port_id))
+					{
+						del_lldp=lldp;
+						break;
+					}
+				}
+				ovsrec_lldp_neighbor_delete(del_lldp);
+			}
+
+			hardware->h_rport_change_opcode = LLDPD_AF_NBR_NOOP;
 			}                   /* strcmp */
 		}                       /* ovsrec loop */
 	}                           /* hardware loop */
@@ -2476,14 +2537,14 @@ lldpd_run(struct lldpd *cfg)
 
 		if (!confirm_txn_try_again) {
 			VLOG_DBG("Invoking lldpd_ovsdb_nbrs_run");
-			nbr_change = lldpd_ovsdb_nbrs_run(idl, cfg);
+			nbr_change = lldpd_ovsdb_nbrs_run(idl, cfg, confirm_txn);
 			if (!nbr_change) {
 				ovsdb_idl_txn_destroy(confirm_txn);
 				confirm_txn = NULL;
 			}
 		} else {
 			VLOG_INFO("Invoking lldpd_ovsdb_nbrs_change_all");
-			lldpd_ovsdb_nbrs_change_all(idl, cfg);
+			lldpd_ovsdb_nbrs_change_all(idl, cfg, confirm_txn);
 			nbr_change = true;
 		}
 	}
@@ -2548,8 +2609,17 @@ ovsdb_init(const char *db_path)
 
 	/* Per interface lldp_neighbor_info */
 	ovsdb_idl_add_column(idl, &ovsrec_interface_col_name);
-	ovsdb_idl_add_column(idl, &ovsrec_interface_col_lldp_neighbor_info);
-	ovsdb_idl_omit_alert(idl, &ovsrec_interface_col_lldp_neighbor_info);
+
+	/* lldp_neighbor_table */
+	ovsdb_idl_add_table(idl, &ovsrec_table_lldp_neighbor);
+        ovsdb_idl_add_column(idl, &ovsrec_lldp_neighbor_col_interface);
+        ovsdb_idl_omit_alert(idl, &ovsrec_lldp_neighbor_col_interface);
+        ovsdb_idl_add_column(idl, &ovsrec_lldp_neighbor_col_neighbor_info);
+        ovsdb_idl_omit_alert(idl, &ovsrec_lldp_neighbor_col_neighbor_info);
+        ovsdb_idl_add_column(idl, &ovsrec_lldp_neighbor_col_port_id);
+        ovsdb_idl_add_column(idl, &ovsrec_lldp_neighbor_col_chassis_id);
+        ovsdb_idl_omit_alert(idl, &ovsrec_lldp_neighbor_col_port_id);
+        ovsdb_idl_omit_alert(idl, &ovsrec_lldp_neighbor_col_chassis_id);
 
 	ovsdb_idl_add_table(idl, &ovsrec_table_bridge);
 	ovsdb_idl_add_column(idl, &ovsrec_bridge_col_name);
@@ -3084,9 +3154,6 @@ lldp_nbr_update(void *smap, struct lldpd_port *p_nbr)
 		LLDP_ENCODE_KEY_VAL(pbuf, &offset, LLDP_NBR_CHASSIS_ID_SUBTYPE,
 				    decode_str, &key_array[idx], &val_array[idx++]);
 
-		decode_nw_addr(decode_str, p_chassis->c_id, p_chassis->c_id_len);
-		LLDP_ENCODE_KEY_VAL(pbuf, &offset, LLDP_NBR_CHASSIS_ID, decode_str,
-				    &key_array[idx], &val_array[idx++]);
 		LLDP_ENCODE_KEY_VAL_INT(pbuf, &offset, LLDP_NBR_CHASSIS_ID_LEN,
 					p_chassis->c_id_len, &key_array[idx],
 					&val_array[idx++]);
@@ -3155,8 +3222,6 @@ lldp_nbr_update(void *smap, struct lldpd_port *p_nbr)
 	LLDP_ENCODE_KEY_VAL(pbuf, &offset, LLDP_NBR_PORT_ID_SUBTYPE, decode_str,
 			    &key_array[idx], &val_array[idx++]);
 
-	LLDP_ENCODE_KEY_VAL(pbuf, &offset, LLDP_NBR_PORT_ID, p_nbr->p_id,
-			    &key_array[idx], &val_array[idx++]);
 	LLDP_ENCODE_KEY_VAL_INT(pbuf, &offset, LLDP_NBR_PORT_ID_LEN,
 				p_nbr->p_id_len, &key_array[idx],
 				&val_array[idx++]);
