@@ -179,6 +179,11 @@ bit_set(uint32_t n)
 	return l;
 }
 
+const struct ovsdb_idl*
+get_idl(void){
+    return idl;
+}
+
 /*
  * The function takes a bitmap of features as input and creates
  * a comma-separated list of feature names as output.
