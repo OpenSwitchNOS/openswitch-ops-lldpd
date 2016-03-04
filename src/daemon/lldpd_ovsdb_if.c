@@ -179,6 +179,11 @@ bit_set(uint32_t n)
 	return l;
 }
 
+const struct ovsdb_idl*
+get_idl(void){
+    return idl;
+}
+
 /*
  * The function takes a bitmap of features as input and creates
  * a comma-separated list of feature names as output.
@@ -2567,6 +2572,9 @@ ovsdb_init(const char *db_path)
 	ovsdb_idl_add_table(idl, &ovsrec_table_vlan);
 	ovsdb_idl_add_column(idl, &ovsrec_vlan_col_name);
 	ovsdb_idl_add_column(idl, &ovsrec_vlan_col_id);
+
+    /* Registering snmp trap table */
+    init_ovsdb_snmp_notifications();
 
 	/* Register ovs-appctl commands for this daemon */
 	unixctl_command_register("lldpd/dump", "", 0, 0, lldpd_unixctl_dump, NULL);
