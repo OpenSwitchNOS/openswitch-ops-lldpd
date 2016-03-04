@@ -137,7 +137,7 @@ enum {
 #define LLDP_CHECK_STATS_FREQUENCY_DFLT             5   /* seconds */
 #define LLDP_CHECK_STATS_FREQUENCY_DFLT_MSEC				\
 	(LLDP_CHECK_STATS_FREQUENCY_DFLT * 1000)    /* milliseconds */
-
+extern struct ovsdb_idl *idl;
 void lldpd_ovsdb_init(int argc, char *argv[]);
 void init_ovspoll_to_libevent(struct lldpd *cfg);
 void lldpd_ovsdb_exit(void);
