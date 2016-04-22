@@ -246,13 +246,12 @@ decode_property(char *decode_str, uint32_t property, uint32_t category)
 static void
 decode_nw_addr(char *decode_str, char *user_str, int key_len)
 {
-	int i, n, size;
+	int i, n;
 	unsigned char c;
 
 	n = 0;
-	size = strlen(user_str);
 	for (i = 0; i < key_len; i++) {
-		c = i < size ? user_str[i] : 0;
+		c = user_str[i];
 		if (i < key_len - 1)
 			n += sprintf(&decode_str[n], "%02x:", c);
 		else
