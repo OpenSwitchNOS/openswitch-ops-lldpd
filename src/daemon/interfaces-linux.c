@@ -30,6 +30,10 @@
 #include <linux/sockios.h>
 #include <linux/if_packet.h>
 #include <linux/ethtool.h>
+#ifdef ENABLE_OVSDB
+#include "lldpd_ovsdb_if.h"
+#endif
+
 
 #define SYSFS_PATH_MAX 256
 #define MAX_PORTS 1024
@@ -395,7 +399,7 @@ iflinux_macphy(struct lldpd_hardware *hardware)
 		port->p_macphy.autoneg_enabled = (ethc.autoneg == AUTONEG_DISABLE) ? 0 : 1;
 		for (j=0; advertised_ethtool_to_rfc3636[j][0]; j++) {
 			if (ethc.advertising & advertised_ethtool_to_rfc3636[j][0])
-				port->p_macphy.autoneg_advertised |= 
+				port->p_macphy.autoneg_advertised |=
 				    advertised_ethtool_to_rfc3636[j][1];
 		}
 		switch (ethc.speed) {
@@ -566,7 +570,15 @@ iflinux_handle_bond(struct lldpd *cfg, struct interfaces_device_list *interfaces
 				    iface->name);
 				continue;
 			}
-			bmaster = hardware->h_data = calloc(1, sizeof(struct bond_master));
+            bmaster = hardware->h_data = calloc(1, sizeof(struct bond_master));
+#ifdef ENABLE_OVSDB
+            hardware->h_enable_dir = HARDWARE_ENABLE_DIR_DEFAULT; //default
+            /*
+             * Add lldpd hardware interface to hashmap to map with
+             * ovsrec and pull any ovsdb configg if present
+             */
+            add_lldpd_hardware_interface(hardware);
+#endif
 			if (!bmaster) {
 				log_warn("interfaces", "not enough memory");
 				lldpd_hardware_cleanup(cfg, hardware);
