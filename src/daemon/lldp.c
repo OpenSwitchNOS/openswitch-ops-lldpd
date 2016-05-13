@@ -538,7 +538,7 @@ lldp_decode(struct lldpd *cfg, char *frame, int s,
 	unsigned char orgid[3];
 	int length, gotend = 0, ttl_received = 0;
 	int tlv_size, tlv_type, tlv_subtype;
-	u_int8_t *pos, *tlv;
+	u_int8_t *pos, *tlv, *cos;
 	char *b;
 #ifdef ENABLE_DOT1
 	struct lldpd_vlan *vlan = NULL;
@@ -573,6 +573,7 @@ lldp_decode(struct lldpd *cfg, char *frame, int s,
 
 	length = s;
 	pos = (u_int8_t*)frame;
+    cos = pos + ETHER_ADDR_LEN;
 
 	if (length < 2*ETHER_ADDR_LEN + sizeof(u_int16_t)) {
 		log_warnx("lldp", "too short frame received on %s", hardware->h_ifname);
@@ -632,12 +633,13 @@ lldp_decode(struct lldpd *cfg, char *frame, int s,
 				    hardware->h_ifname);
 				goto malformed;
 			}
-			PEEK_BYTES(b, tlv_size - 1);
 			if (tlv_type == LLDP_TLV_PORT_ID) {
+                PEEK_BYTES(b, tlv_size - 1);
 				port->p_id_subtype = tlv_subtype;
 				port->p_id = b;
 				port->p_id_len = tlv_size - 1;
 			} else {
+                memcpy(b , cos, (tlv_size - 1));
 				chassis->c_id_subtype = tlv_subtype;
 				chassis->c_id = b;
 				chassis->c_id_len = tlv_size - 1;
