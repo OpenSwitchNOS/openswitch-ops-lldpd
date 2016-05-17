@@ -1265,6 +1265,7 @@ lldpd_exit(struct lldpd *cfg)
  *
  * @return PID of running lldpcli or -1 if error.
  */
+#ifndef ENABLE_OVSDB
 static pid_t
 lldpd_configure(int debug, const char *path, const char *ctlname)
 {
@@ -1306,6 +1307,7 @@ lldpd_configure(int debug, const char *path, const char *ctlname)
 	/* Should not be here */
 	return -1;
 }
+#endif
 
 struct intint { int a; int b; };
 static const struct intint filters[] = {
@@ -1657,12 +1659,14 @@ lldpd_main(int argc, char *argv[], char *envp[])
 	/* Disable SIGHUP, until handlers are installed */
 	signal(SIGHUP, SIG_IGN);
 
+#ifndef ENABLE_OVSDB
 	/* Configuration with lldpcli */
 	if (lldpcli) {
 		log_debug("main", "invoking lldpcli for configuration");
 		if (lldpd_configure(debug, lldpcli, ctlname) == -1)
 			fatal("main", "unable to spawn lldpcli");
 	}
+#endif
 
 #if !defined(ENABLE_OVSDB) && !defined(HOST_OS_X)
 	/* Daemonization, unless started by upstart, systemd or launchd or debug */
