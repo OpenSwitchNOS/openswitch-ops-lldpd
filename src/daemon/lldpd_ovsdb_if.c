@@ -3167,7 +3167,12 @@ lldp_nbr_update(void *smap, struct lldpd_port *p_nbr)
 	LLDP_ENCODE_KEY_VAL(pbuf, &offset, LLDP_NBR_PORT_ID_SUBTYPE, decode_str,
 			    &key_array[idx], &val_array[idx++]);
 
-	LLDP_ENCODE_KEY_VAL(pbuf, &offset, LLDP_NBR_PORT_ID, p_nbr->p_id,
+	if (p_nbr->p_id_subtype == LLDP_PORTID_SUBTYPE_LLADDR) {
+		decode_nw_addr(decode_str, p_nbr->p_id, p_nbr->p_id_len);
+	} else {
+		decode_str = p_nbr->p_id;
+	}
+	LLDP_ENCODE_KEY_VAL(pbuf, &offset, LLDP_NBR_PORT_ID, decode_str,
 			    &key_array[idx], &val_array[idx++]);
 	LLDP_ENCODE_KEY_VAL_INT(pbuf, &offset, LLDP_NBR_PORT_ID_LEN,
 				p_nbr->p_id_len, &key_array[idx],
