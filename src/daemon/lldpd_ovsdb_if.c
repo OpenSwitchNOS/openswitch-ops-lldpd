@@ -962,7 +962,7 @@ set_lldp_pvid(const struct ovsrec_port *row, struct interface_data *interface)
 
 	/* Get native VID from 'tag' column */
 	if ((row->tag != NULL)) {
-		native_vid = (int) *row->tag;
+		native_vid = ops_port_get_tag(row);
 		if (interface->hw) {
 			interface->hw->h_lport.p_pvid = native_vid;
 			VLOG_INFO("Setting pvid %d", interface->hw->h_lport.p_pvid);
