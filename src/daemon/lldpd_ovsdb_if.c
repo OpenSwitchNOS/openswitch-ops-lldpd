@@ -1,4 +1,3 @@
-
 /*
  * (c) Copyright 2016 Hewlett Packard Enterprise Development LP
  *
@@ -2263,6 +2262,61 @@ lldpd_ovsdb_nbrs_run(struct ovsdb_idl *idl, struct lldpd *cfg)
 }
 
 /*
+ * This function called first time the deamon comes up.
+ * This function enbales lldp
+ */
+static bool lldpd_initialised;
+
+static void
+ovsdb_lldp_enable(struct ovsdb_idl *idl)
+{
+         const struct ovsrec_system *sys_row = NULL;
+         enum ovsdb_idl_txn_status txn_status;
+         struct ovsdb_idl_txn *status_txn;
+         struct smap smap_other_config;
+
+         sys_row = ovsrec_system_first(idl);
+         if (sys_row != NULL) {
+                 status_txn = ovsdb_idl_txn_create(idl);
+                 if (NULL == status_txn)
+                 {
+                          VLOG_ERR("Error in creating ovsdb transaction");
+                          ovsdb_idl_txn_destroy(status_txn);
+                          return;
+                 }
+                 const char *lldp_status = smap_get(&sys_row->other_config, SYSTEM_OTHER_CONFIG_MAP_LLDP_ENABLE);
+                 if (lldp_status  == NULL) {
+                          smap_clone(&smap_other_config, &sys_row->other_config);
+                          smap_replace(&smap_other_config, SYSTEM_OTHER_CONFIG_MAP_LLDP_ENABLE,"true");
+
+                          ovsrec_system_set_other_config(sys_row, &smap_other_config);
+                          txn_status = ovsdb_idl_txn_commit_block(status_txn);
+
+                          if(txn_status == TXN_SUCCESS || txn_status == TXN_UNCHANGED)
+                          {
+                                   lldpd_initialised = true;
+                                   ovsdb_idl_txn_destroy(status_txn);
+			           status_txn = NULL;
+                          }
+                          else
+                          {
+                                   VLOG_INFO("txn_status : %d ",txn_status);
+                                   VLOG_ERR("ovsdb transaction commit error");
+                                   ovsdb_idl_txn_destroy(status_txn);
+                                   status_txn = NULL;
+                          }
+                 }
+         }
+         else
+         {
+                 VLOG_DBG("Unable to get system table row");
+         }
+
+         smap_destroy(&smap_other_config);
+         return;
+
+}
+/*
  * This function is called to sync up LLDP internal neighbor info
  * with OVSDB by copying LLDP table info to OVSDB for each LLDP interface
  * It's called after a transaction failure (e.g. neighbor update failure)
@@ -2305,6 +2359,7 @@ lldpd_ovsdb_nbrs_change_all(struct ovsdb_idl *idl, struct lldpd *cfg)
 
 	return;
 }
+
 
 static void
 lldpd_reconfigure(struct ovsdb_idl *idl, struct lldpd *g_lldp_cfg)
@@ -2478,6 +2533,11 @@ lldpd_run(struct lldpd *cfg)
 	lldpd_chk_for_system_configured();
 
 	if (system_configured) {
+                if (!lldpd_initialised)
+                {
+                        ovsdb_lldp_enable(idl);
+                }
+
 		lldpd_reconfigure(idl, cfg);
 		lldpd_stats_run(cfg);
 		daemonize_complete();
@@ -2543,7 +2603,7 @@ ovsdb_init(const char *db_path)
 	idl = ovsdb_idl_create(db_path, &ovsrec_idl_class, false, true);
 	idl_seqno = ovsdb_idl_get_seqno(idl);
 	ovsdb_idl_set_lock(idl, "ops_lldpd");
-	ovsdb_idl_verify_write_only(idl);
+//	ovsdb_idl_verify_write_only(idl);
 
 	/* Choose some OVSDB tables and columns to cache */
 
