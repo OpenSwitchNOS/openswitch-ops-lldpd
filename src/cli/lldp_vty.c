@@ -502,12 +502,6 @@ lldp_set_tlv(const char *tlv_name, const char *status)
     strcpy(tlv, SYSTEM_OTHER_CONFIG_MAP_LLDP_TLV_PORT_DESC_ENABLE);
   else if (0 == strcmp(tlv_name, "port-vlan-id"))
     strcpy(tlv, SYSTEM_OTHER_CONFIG_MAP_LLDP_TLV_PORT_VLAN_ID_ENABLE);
-  else if(0 == strcmp(tlv_name, "port-vlan-name"))
-    strcpy(tlv, SYSTEM_OTHER_CONFIG_MAP_LLDP_TLV_PORT_VLAN_NAME_ENABLE);
-  else if(0 == strcmp(tlv_name, "port-protocol-vlan-id"))
-    strcpy(tlv, SYSTEM_OTHER_CONFIG_MAP_LLDP_TLV_PORT_PROTO_VLAN_ID_ENABLE);
-  else if(0 == strcmp(tlv_name, "port-protocol-id"))
-    strcpy(tlv, SYSTEM_OTHER_CONFIG_MAP_LLDP_TLV_PORT_PROTO_ID_ENABLE);
   else if(0 == strcmp(tlv_name, "system-capabilities"))
     strcpy(tlv, SYSTEM_OTHER_CONFIG_MAP_LLDP_TLV_SYS_CAP_ENABLE);
   else if(0 == strcmp(tlv_name, "system-description"))
@@ -540,17 +534,12 @@ lldp_set_tlv(const char *tlv_name, const char *status)
 DEFUN (cli_lldp_select_tlv,
        lldp_select_tlv_cmd,
        "lldp select-tlv (management-address | port-description | port-vlan-id |\
-                        port-vlan-name | port-protocol-vlan-id |\
-                        port-protocol-id | system-capabilities |\
-                        system-description | system-name)",
+                        system-capabilities | system-description | system-name)",
        CONFIG_LLDP_STR
        "Specifies the TLVs to send and receive in LLDP packets\n"
        "Select management-address TLV\n"
        "Select port-description TLV\n"
        "Select port-vlan-id TLV\n"
-       "Select port-vlan-name TLV\n"
-       "Select port-protocol-vlan-id TLV\n"
-       "Select port-protocol-id TLV\n"
        "Select system-capabilities TLV\n"
        "Select system-description TLV\n"
        "Select system-name TLV\n")
@@ -561,18 +550,13 @@ DEFUN (cli_lldp_select_tlv,
 DEFUN (cli_no_lldp_select_tlv,
        lldp_no_select_tlv_cmd,
        "no lldp select-tlv (management-address | port-description | port-vlan-id |\
-                        port-vlan-name | port-protocol-vlan-id |\
-                        port-protocol-id | system-capabilities |\
-                        system-description | system-name)",
+                        system-capabilities | system-description | system-name)",
        NO_STR
        CONFIG_LLDP_STR
        "Specifies the TLVs to send and receive in LLDP packets\n"
        "Select management-address TLV\n"
        "Select port-description TLV\n"
        "Select port-vlan-id TLV\n"
-       "Select port-vlan-name TLV\n"
-       "Select port-protocol-vlan-id TLV\n"
-       "Select port-protocol-id TLV\n"
        "Select system-capabilities TLV\n"
        "Select system-description TLV\n"
        "Select system-name TLV\n")
@@ -698,24 +682,6 @@ lldp_show_tlv(const struct ovsrec_system *row)
                            SYSTEM_OTHER_CONFIG_MAP_LLDP_TLV_DEFAULT);
   if(tlv_set)
      vty_out (vty, "Port VLAN-ID %s", VTY_NEWLINE);
-
-  tlv_set = smap_get_bool(&row->other_config,
-                           SYSTEM_OTHER_CONFIG_MAP_LLDP_TLV_PORT_PROTO_VLAN_ID_ENABLE,
-                           SYSTEM_OTHER_CONFIG_MAP_LLDP_TLV_DEFAULT);
-  if(tlv_set)
-     vty_out (vty, "Port Protocol VLAN-ID %s", VTY_NEWLINE);
-
-  tlv_set = smap_get_bool(&row->other_config,
-                           SYSTEM_OTHER_CONFIG_MAP_LLDP_TLV_PORT_VLAN_NAME_ENABLE,
-                           SYSTEM_OTHER_CONFIG_MAP_LLDP_TLV_DEFAULT);
-  if(tlv_set)
-     vty_out (vty, "Port VLAN Name %s", VTY_NEWLINE);
-
-  tlv_set = smap_get_bool(&row->other_config,
-                           SYSTEM_OTHER_CONFIG_MAP_LLDP_TLV_PORT_PROTO_ID_ENABLE,
-                           SYSTEM_OTHER_CONFIG_MAP_LLDP_TLV_DEFAULT);
-  if(tlv_set)
-     vty_out (vty, "Port Protocol-ID %s", VTY_NEWLINE);
 
   tlv_set = smap_get_bool(&row->other_config,
                            SYSTEM_OTHER_CONFIG_MAP_LLDP_TLV_SYS_CAP_ENABLE,
@@ -1588,20 +1554,6 @@ lldp_port_get_matching_interface_row(const struct ovsrec_port *port_row)
     return NULL;
 }
 
-static char *
-lldp_get_vlan_name(int vlan_id)
-{
-    const struct ovsrec_vlan *vlan;
-
-    /* Collect all the VLANs in the DB */
-    OVSREC_VLAN_FOR_EACH(vlan, idl) {
-        if (vlan->id == vlan_id) {
-            return vlan->name;
-        }
-    }
-    return NULL;
-}
-
 DEFUN (cli_lldp_show_local_device,
           lldp_show_local_device_cmd,
           "show lldp local-device",
@@ -1617,7 +1569,6 @@ DEFUN (cli_lldp_show_local_device,
 
     int tx_interval = 0;
     int hold_time = 0;
-    int i = 0;
     char *system_name = NULL;
     char *system_des = NULL;
     char *chassis_id = NULL;
@@ -1625,7 +1576,6 @@ DEFUN (cli_lldp_show_local_device,
     const char *lldp_mgmt_pattern_ipv6 = NULL;
     struct utsname un;
     bool print_header = 0;
-    char *vlan_name = NULL;
 
     system_des = lldpd_get_system_description();
 
@@ -1718,86 +1668,13 @@ DEFUN (cli_lldp_show_local_device,
         vty_out(vty, "%s", VTY_NEWLINE);
         vty_out(vty, "Port-ID           : %s%s", portrow->name,  VTY_NEWLINE);
         vty_out(vty, "Port-Description  : \"%s\"%s", portrow->name, VTY_NEWLINE);
+        vty_out(vty, "Port VLAN Id      : ");
+        if (portrow->tag) {
+            vty_out(vty, "%lu", *portrow->tag);
+	}
 
-        vlan_name = NULL;
-        if (portrow->vlan_mode && strcmp(portrow->vlan_mode, OVSREC_PORT_VLAN_MODE_TRUNK) != 0) {
-            if (portrow->tag) {
-                vlan_name = lldp_get_vlan_name(*portrow->tag);
-            }
+        vty_out(vty, "%s", VTY_NEWLINE);
 
-            vty_out(vty, "Port VLAN Id      : ");
-            if (portrow->tag)
-                vty_out(vty, "%lu%s", *portrow->tag, VTY_NEWLINE);
-
-            if (strcmp(portrow->vlan_mode, OVSREC_PORT_VLAN_MODE_ACCESS) == 0) {
-                vty_out(vty, "VLAN-Ids          : ");
-                if (portrow->tag)
-                    vty_out(vty, "%lu%s", *portrow->tag, VTY_NEWLINE);
-
-                vty_out(vty, "VLAN Name         : %s%s", (vlan_name ? vlan_name : ""), VTY_NEWLINE);
-                vty_out(vty, "%s", VTY_NEWLINE);
-            } else {
-                vty_out(vty, "VLAN-Ids          : ");
-
-                if (portrow->tag)
-                    vty_out(vty, "%lu", *portrow->tag);
-
-
-                for (i = 0; i < portrow->n_trunks; i++) {
-                    if (portrow->tag && *portrow->tag == portrow->trunks[i])
-                        continue;
-
-                    if (portrow->tag || i )
-                        vty_out(vty, ", ");
-
-
-                    vty_out(vty, "%lu", portrow->trunks[i]);
-                }
-
-                vty_out(vty, " %s", VTY_NEWLINE);
-                vty_out(vty, "VLAN Name         : ");
-
-                if (portrow->tag) {
-                    vlan_name = lldp_get_vlan_name(*portrow->tag);
-                    vty_out(vty, "%s%s", (vlan_name ? vlan_name : ""), VTY_NEWLINE);
-                }
-
-                for (i = 0; i < portrow->n_trunks; i++) {
-                    if (portrow->tag && *portrow->tag == portrow->trunks[i])
-                        continue;
-
-                    if ( portrow->tag || i )
-                        vty_out(vty, ", ");
-
-                    vlan_name = lldp_get_vlan_name(portrow->trunks[i]);
-                    vty_out(vty, "%s", (vlan_name ? vlan_name : ""));
-                }
-
-            }
-        }
-
-        if (portrow->vlan_mode && strcmp(portrow->vlan_mode, OVSREC_PORT_VLAN_MODE_TRUNK) == 0) {
-
-            vty_out(vty, "Port VLAN Id      :%s", VTY_NEWLINE);
-            vty_out(vty, "VLAN-Ids          : ");
-            for (i = 0; i < portrow->n_trunks; i++) {
-                if ( i )
-                    vty_out(vty, ", ");
-                vty_out(vty, "%lu", portrow->trunks[i]);
-            }
-
-            vty_out(vty, " %s", VTY_NEWLINE);
-            vty_out(vty, "VLAN Name         : ");
-            for (i = 0; i < portrow->n_trunks; i++) {
-                if ( i )
-                    vty_out(vty, ", ");
-                vlan_name = lldp_get_vlan_name(portrow->trunks[i]);
-                vty_out(vty, "%s", (vlan_name ? vlan_name : ""));
-            }
-
-            vty_out(vty, " %s", VTY_NEWLINE);
-
-        }
     }
     vty_out(vty, "%s", VTY_NEWLINE);
     return CMD_SUCCESS;

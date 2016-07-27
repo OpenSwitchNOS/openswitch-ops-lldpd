@@ -3263,8 +3263,10 @@ lldp_nbr_update(void *smap, struct lldpd_port *p_nbr)
 #endif
 
 	/* vlans */
-	LLDP_ENCODE_KEY_VAL_INT(pbuf, &offset, LLDP_NBR_PORT_PVID, p_nbr->p_pvid,
-				&key_array[idx], &val_array[idx++]);
+	if (p_nbr->p_pvid) {
+		LLDP_ENCODE_KEY_VAL_INT(pbuf, &offset, LLDP_NBR_PORT_PVID, p_nbr->p_pvid,
+					&key_array[idx], &val_array[idx++]);
+	}
 
 #ifdef ENABLE_DOT1
 	if (!TAILQ_EMPTY(&p_nbr->p_vlans)) {
