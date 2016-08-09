@@ -45,7 +45,7 @@ def configure_lldp(dut, number):
                shell="vsctl").strip()
     print("Got switch uuid - {uuid}.".format(uuid=uuid))
 
-    dut("-t 60 set system {uuid} other_config:lldp_enable=true "
+    dut("-t 100 set system {uuid} other_config:lldp_enable=true "
         "other_config:lldp_mgmt_addr=204.152.189.{number} "
         "other_config:lldp_tx_interval=5".format(
             uuid=uuid, number=number), shell="vsctl")
