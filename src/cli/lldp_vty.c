@@ -262,6 +262,7 @@ set_global_reinit_time(const char *reinit_time)
   ovsrec_system_set_other_config(row, &smap_other_config);
 
   status = cli_do_config_finish(status_txn);
+
   smap_destroy(&smap_other_config);
   if (status == TXN_SUCCESS || status == TXN_UNCHANGED)
   {
