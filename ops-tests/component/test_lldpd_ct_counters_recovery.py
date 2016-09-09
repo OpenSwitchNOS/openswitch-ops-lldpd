@@ -104,6 +104,7 @@ def get_lldp_rx_count(dut, port):
     return lldp_rx_int_value
 
 
+@mark.gate
 @mark.timeout(1000)
 def test_lldpd_ct_counters_recovery(topology, step):
     ops1 = topology.get('ops1')
