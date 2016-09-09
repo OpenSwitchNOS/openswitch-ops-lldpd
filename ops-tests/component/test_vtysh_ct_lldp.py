@@ -18,6 +18,7 @@
 # 02111-1307, USA.
 
 from time import sleep
+from re import match
 
 TOPOLOGY = """
 # +-------+
@@ -101,21 +102,27 @@ def enable_lldp_feature_test(sw1):
     lines = output.split('\n')
     for line in lines:
         if 'lldp_enable' in line:
-            lldp_feature_enabled = True
-            break
+            lldpen = match(r'.*\s*lldp_enable=\"(?P<lldp_enable>[a-z]*)\".*', line)
+            lldpendict = lldpen.groupdict()
+            if lldpendict and lldpendict['lldp_enable'] == "true":
+               lldp_feature_enabled = True
+               break
     assert lldp_feature_enabled
 
 
 def disable_lldp_feature_test(sw1):
-    lldp_feature_enabled = True
+    lldp_feature_disabled = False
     sw1('no lldp enable')
     output = sw1('list system', shell='vsctl')
     lines = output.split('\n')
     for line in lines:
         if 'lldp_enable' in line:
-            lldp_feature_enabled = False
-            break
-    assert lldp_feature_enabled
+            lldpen = match(r'.*\s*lldp_enable=\"(?P<lldp_enable>[a-z]*)\".*', line)
+            lldpendict = lldpen.groupdict()
+            if lldpendict and lldpendict['lldp_enable'] == "false":
+                lldp_feature_disabled = True
+                break
+    assert lldp_feature_disabled
 
 
 def set_lldp_holdtime_test(sw1):
