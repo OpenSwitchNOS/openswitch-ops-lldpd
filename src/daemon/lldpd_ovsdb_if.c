@@ -1,4 +1,3 @@
-
 /*
  * (c) Copyright 2016 Hewlett Packard Enterprise Development LP
  *
@@ -993,15 +992,21 @@ del_old_port(struct shash_node *sh_node)
 				if (port->interfaces[k])
 					intf =
 						shash_find_data(&all_interfaces,
-								port->interfaces[k]->hw->h_ifname);
+								port->interfaces[k]->name);
 				if (!intf) {
 					continue;
 				}
+
 				intf->portdata = NULL;
+
 				VLOG_INFO("Cleaning up vlan info for Interface %s",
-					  port->interfaces[k]->hw->h_ifname);
-				lldpd_vlan_cleanup(&port->interfaces[k]->hw->h_lport);
-				port->interfaces[k]->hw->h_lport.p_pvid = 0;
+					  port->interfaces[k]->name);
+
+                                if(port->interfaces[k]->hw != NULL) {
+                                        lldpd_vlan_cleanup(&port->interfaces[k]->hw->h_lport);
+                                        port->interfaces[k]->hw->h_lport.p_pvid = 0;
+                                }
+
 				rc++;
 			}
 			free(port->interfaces);
@@ -1443,7 +1448,7 @@ lldpd_apply_global_changes(struct ovsdb_idl *idl,
 								c_tx_hold));
 			VLOG_INFO("Configured lldp  tx-hold [%d]",
 				  g_lldp_cfg->g_config.c_tx_hold);
-                        log_event("LLDP_TX_HOLD", EV_KV("value", "%d",
+                        log_event("LLDP_TX_HOLD", EV_KV("hold", "%d",
                             g_lldp_cfg->g_config.c_tx_hold));
 			*send_now = 1;
 		}
@@ -2267,6 +2272,50 @@ lldpd_ovsdb_nbrs_run(struct ovsdb_idl *idl, struct lldpd *cfg)
 }
 
 /*
+ * This function sets the default value at first time,
+ * by default lldp is enabled.
+ */
+static bool
+lldpd_ovsdb_initialise(struct ovsdb_idl *idl)
+{
+	const struct ovsrec_system *sys_row = NULL;
+	enum ovsdb_idl_txn_status txn_status = TXN_ERROR;
+	struct ovsdb_idl_txn *status_txn = NULL;
+	struct smap smap_other_config;
+	bool ret = false;
+
+	smap_init(&smap_other_config);
+	sys_row = ovsrec_system_first(idl);
+
+	if (sys_row != NULL) {
+		const char *lldp_status = smap_get(&sys_row->other_config,
+							SYSTEM_OTHER_CONFIG_MAP_LLDP_ENABLE);
+	        if (lldp_status  == NULL)
+	        {
+			status_txn = ovsdb_idl_txn_create(idl);
+	                smap_clone(&smap_other_config, &sys_row->other_config);
+	                smap_replace(&smap_other_config, SYSTEM_OTHER_CONFIG_MAP_LLDP_ENABLE,"true");
+
+	                ovsrec_system_set_other_config(sys_row, &smap_other_config);
+	                txn_status = ovsdb_idl_txn_commit_block(status_txn);
+			ovsdb_idl_txn_destroy(status_txn);
+
+	                if(txn_status == TXN_SUCCESS || txn_status == TXN_UNCHANGED)
+			{
+				ret = true;
+				VLOG_DBG("LLDP enable default setting success");
+	                }
+	        }
+	}
+
+	smap_destroy(&smap_other_config);
+	return ret;
+}
+
+
+
+
+/*
  * This function is called to sync up LLDP internal neighbor info
  * with OVSDB by copying LLDP table info to OVSDB for each LLDP interface
  * It's called after a transaction failure (e.g. neighbor update failure)
@@ -2309,6 +2358,7 @@ lldpd_ovsdb_nbrs_change_all(struct ovsdb_idl *idl, struct lldpd *cfg)
 
 	return;
 }
+
 
 static void
 lldpd_reconfigure(struct ovsdb_idl *idl, struct lldpd *g_lldp_cfg)
@@ -2464,6 +2514,7 @@ lldpd_run(struct lldpd *cfg)
 {
 	bool nbr_change;
 	static struct ovsdb_idl_txn *confirm_txn = NULL;
+	static bool lldpd_initialised;
 
 	ovsdb_idl_run(idl);
 	unixctl_server_run(appctl);
@@ -2482,6 +2533,7 @@ lldpd_run(struct lldpd *cfg)
 	lldpd_chk_for_system_configured();
 
 	if (system_configured) {
+		lldpd_initialised = lldpd_initialised ? lldpd_initialised : lldpd_ovsdb_initialise(idl);
 		lldpd_reconfigure(idl, cfg);
 		lldpd_stats_run(cfg);
 		daemonize_complete();
@@ -2547,7 +2599,6 @@ ovsdb_init(const char *db_path)
 	idl = ovsdb_idl_create(db_path, &ovsrec_idl_class, false, true);
 	idl_seqno = ovsdb_idl_get_seqno(idl);
 	ovsdb_idl_set_lock(idl, "ops_lldpd");
-	ovsdb_idl_verify_write_only(idl);
 
 	/* Choose some OVSDB tables and columns to cache */
 
@@ -2771,7 +2822,7 @@ del_lldpd_hardware_interface(struct lldpd_hardware *hw)
 			free(itf->name);
 			free(sh_node->data);
 			shash_delete(&all_interfaces, sh_node);
-		} else {
+		} else if (itf->hw == hw) {
 			itf->hw = NULL;
 		}
 	}

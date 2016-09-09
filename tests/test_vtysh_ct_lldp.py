@@ -1,4 +1,4 @@
-#!/usr/bin/python
+# -*- coding: utf-8 -*-
 
 # (c) Copyright 2015 Hewlett Packard Enterprise Development LP
 #
@@ -18,575 +18,400 @@
 # 02111-1307, USA.
 
 from time import sleep
-from opsvsi.docker import *
-from opsvsi.opsvsitest import *
+from re import match
+
+TOPOLOGY = """
+# +-------+
+# |  sw1  |
+# +-------+
+
+# Nodes
+[type=openswitch name="Switch 1"] sw1
+[type=oobmhost name="Host 1"] hs1
+
+# Ports
+[force_name=oobm] sw1:sp1
+
+# Links
+sw1:sp1 -- hs1:1
+"""
 
 
-class LLDPCliTest(OpsVsiTest):
-
-    uuid = ''
-
-    def initLLDPLocaldevice(self):
-        s1 = self.net.switches[0]
-        #Set IPV4 and IPv6 Mgmt address
-        s1.cmdCLI('conf t')
-        s1.cmdCLI('interface mgmt')
-        s1.cmdCLI('ip static 192.168.1.1/24')
-        s1.cmdCLI('ip static fd12:3456:789a:1::/64')
-        s1.cmdCLI('exit')
-        #Set hostname to openswitch
-        s1.cmd('hostname openswitch')
-        #Set holdtime and timer, to check TTL(3*20 = 60)
-        s1.cmdCLI('lldp holdtime 3')
-        s1.cmdCLI('lldp  timer 20')
-        sleep(10)
-
-    def initLLDPNeighborinfo(self):
-        s1 = self.net.switches[0]
-        s1.cmd('ovs-vsctl  set interface ' + LLDPCliTest.uuid
-               + ' lldp_neighbor_info:chassis_capability_available='
-               + 'Bridge,Router \n '
-               )
-        s1.cmd('ovs-vsctl  set interface ' + LLDPCliTest.uuid
-               + ' lldp_neighbor_info:chassis_description=OpenSwitch_0.1.0'
-               + '_basil_Linux_3.9.11_#1_SMP_Mon_Aug_24_14:38:01'
-               + '_UTC_2015_x86_64'
-               )
-        s1.cmd('ovs-vsctl  set interface ' + LLDPCliTest.uuid
-               + ' lldp_neighbor_info:chassis_id=70:72:cf:fd:e9:26 \n'
-               )
-        s1.cmd('ovs-vsctl  set interface ' + LLDPCliTest.uuid
-               + ' lldp_neighbor_info:chassis_id_len= 6 \n')
-        s1.cmd('ovs-vsctl  set interface ' + LLDPCliTest.uuid
-               + ' lldp_neighbor_info:chassis_id_subtype='
-               + 'link_local_addr \n'
-               )
-        s1.cmd('ovs-vsctl  set interface ' + LLDPCliTest.uuid
-               + ' lldp_neighbor_info:chassis_index=1 \n')
-        s1.cmd('ovs-vsctl  set interface ' + LLDPCliTest.uuid
-               + ' lldp_neighbor_info:chassis_name=as5712 \n')
-        s1.cmd('ovs-vsctl  set interface ' + LLDPCliTest.uuid
-               + ' lldp_neighbor_info:chassis_protocol=LLDP \n')
-        s1.cmd('ovs-vsctl  set interface ' + LLDPCliTest.uuid
-               + ' lldp_neighbor_info:chassis_refcount=1 \n')
-        s1.cmd('ovs-vsctl  set interface ' + LLDPCliTest.uuid
-               + ' lldp_neighbor_info:chassis_ttl=120 \n')
-        s1.cmd('ovs-vsctl  set interface ' + LLDPCliTest.uuid
-               + ' lldp_neighbor_info:mgmt_ip_list=10.10.10.10 \n')
-        sleep(1)
-
-    def setupNet(self):
-
-        # if you override this function, make sure to
-        # either pass getNodeOpts() into hopts/sopts of the topology that
-        # you build or into addHost/addSwitch calls
-
-        host_opts = self.getHostOpts()
-        switch_opts = self.getSwitchOpts()
-        infra_topo = SingleSwitchTopo(k=0, hopts=host_opts, sopts=switch_opts)
-        self.net = Mininet(infra_topo, switch=VsiOpenSwitch,
-                           host=Host, link=OpsVsiLink,
-                           controller=None, build=True)
-
-    def enableLLDPFeatureTest(self):
-        info('''
-########## Test to enable LLDP feature ##########
-''')
-        lldp_feature_enabled = False
-        s1 = self.net.switches[0]
-        s1.cmdCLI('conf t')
-        s1.cmdCLI('lldp enable')
-        out = s1.cmd('ovs-vsctl list system')
-        lines = out.split('\n')
-        for line in lines:
-            if 'lldp_enable' in line:
-                lldp_feature_enabled = True
-        assert (lldp_feature_enabled is True), \
-            'Test to enable LLDP feature - FAILED'
-        return True
-
-    def disableLLDPFeatureTest(self):
-        info('''
-########## Test to disable LLDP feature ##########
-''')
-        lldp_feature_enabled = True
-        s1 = self.net.switches[0]
-        s1.cmdCLI('conf t')
-        s1.cmdCLI('no lldp enable')
-        out = s1.cmd('ovs-vsctl list system')
-        lines = out.split('\n')
-        for line in lines:
-            if 'lldp_enable' in line:
-                lldp_feature_enabled = False
-        assert (lldp_feature_enabled is True), \
-            'Test to disable LLDP feature - FAILED!'
-        return True
-
-    def setLLDPholdtimeTest(self):
-        info('''
-########## Test setting LLDP holdtime ##########
-''')
-        lldp_hold_time_set = False
-        s1 = self.net.switches[0]
-        s1.cmdCLI('conf t')
-        s1.cmdCLI('lldp holdtime 7')
-        out = s1.cmd('ovs-vsctl list system')
-        lines = out.split('\n')
-        for line in lines:
-            if 'lldp_hold="7"' in line:
-                lldp_hold_time_set = True
-        assert (lldp_hold_time_set is True), \
-            'Test setting LLDP holdtime - FAILED!'
-        return True
-
-    def unsetLLDPholdtimeTest(self):
-        s1 = self.net.switches[0]
-        info('''
-########## Test unsetting LLDP holdtime ##########
-''')
-        lldp_holdtime_set = False
-        s1.cmdCLI('conf t')
-        s1.cmdCLI('no lldp holdtime')
-        out = s1.cmd('do show running')
-        lines = out.split('\n')
-        for line in lines:
-            if 'lldp holdtime' in line:
-                lldp_holdtime_set = True
-        assert (lldp_holdtime_set is False), \
-            'Test unsetting LLDP holdtime - FAILED!'
-        return True
-
-    def setLLDPDefaultHoldtimeTest(self):
-        info('''
-########## Test setting LLDP default holdtime ##########
-''')
-        lldp_default_hold_time_set = True
-        s1 = self.net.switches[0]
-        s1.cmdCLI('conf t')
-        s1.cmdCLI('lldp holdtime 4')
-        out = s1.cmd('ovs-vsctl list system')
-        lines = out.split('\n')
-        for line in lines:
-            if 'lldp_hold' in line:
-                lldp_default_hold_time_set = False
-        assert (lldp_default_hold_time_set is True), \
-            'Test setting LLDP default holdtime - FAILED!'
-        return True
-
-    def setLLDPReinitDelayTest(self):
-        info('''
-########## Test setting LLDP reinit delay ##########
-''')
-        lldp_reinit_delay_set = False
-        s1 = self.net.switches[0]
-        s1.cmdCLI('conf t')
-        s1.cmdCLI('lldp reinit 7')
-        out = s1.cmdCLI('do show running')
-        lines = out.split('\n')
-        for line in lines:
-            if 'lldp reinit 7' in line:
-                lldp_reinit_delay_set = True
-        assert (lldp_reinit_delay_set is True), \
-            'Test setting LLDP reinit delay - FAILED!'
-        return True
-
-    def unsetLLDPReinitDelayTest(self):
-        s1 = self.net.switches[0]
-        info('''
-########## Test unsetting LLDP reinit delay ##########
-''')
-        lldp_reinit_delay_set = False
-        s1 = self.net.switches[0]
-        s1.cmdCLI('conf t')
-        s1.cmdCLI('no lldp reinit')
-        out = s1.cmdCLI('do show running')
-        lines = out.split('\n')
-        for line in lines:
-            if 'lldp reinit' in line:
-                lldp_reinit_delay_set = True
-        assert (lldp_reinit_delay_set is False), \
-            'Test unsetting LLDP reinit - FAILED!'
-        return True
-
-    def setLLDPDefaultReinitDelayTest(self):
-        info('''
-########## Test setting LLDP default reinit delay ##########
-''')
-        lldp_reinit_delay_set = False
-        s1 = self.net.switches[0]
-        s1.cmdCLI('conf t')
-        s1.cmdCLI('lldp reinit 2')
-        out = s1.cmdCLI('do show running')
-        lines = out.split('\n')
-        for line in lines:
-            if 'lldp reinit' in line:
-                lldp_reinit_delay_set = True
-        assert (lldp_reinit_delay_set is False), \
-            'Test setting LLDP default reinit - FAILED!'
-        return True
-
-    def setLLDPTimerTest(self):
-        info('''
-########## Test setting LLDP timer ##########
-''')
-        lldp_timer_set = False
-        s1 = self.net.switches[0]
-        s1.cmdCLI('conf t')
-        s1.cmdCLI('lldp timer 100')
-        out = s1.cmd('ovs-vsctl list system')
-        lines = out.split('\n')
-        for line in lines:
-            if 'lldp_tx_interval="100"' in line:
-                lldp_timer_set = True
-        assert (lldp_timer_set is True), \
-            'Test setting LLDP timer - FAILED!'
-        return True
-
-    def unsetLLDPTimerTest(self):
-        info('''
-########## Test unsetting LLDP timer ##########
-''')
-        lldp_timer_set = False
-        s1 = self.net.switches[0]
-        s1.cmdCLI('conf t')
-        s1.cmdCLI('no lldp timer')
-        out = s1.cmd('do show running')
-        lines = out.split('\n')
-        for line in lines:
-            if 'lldp timer' in line:
-                lldp_timer_set = True
-        assert (lldp_timer_set is False), \
-            'Test unsetting LLDP timer - FAILED!'
-        return True
-
-    def setLLDPDefaultTimerTest(self):
-        info('''
-########## Test setting default LLDP timer ##########
-''')
-        lldp_default_timer_set = True
-        s1 = self.net.switches[0]
-        s1.cmdCLI('conf t')
-        s1.cmdCLI('lldp timer 30')
-        out = s1.cmd('ovs-vsctl list system')
-        lines = out.split('\n')
-        for line in lines:
-            if 'lldp_tx_interval' in line:
-                lldp_default_timer_set = False
-        assert (lldp_default_timer_set is True), \
-            'Test setting default LLDP timer - FAILED!'
-        return True
-
-    def setLLDPMgmtAddressTest(self):
-        info('''
-########## Test setting LLDP management address ##########
-''')
-        lldp_mgmt_addr_set = False
-        s1 = self.net.switches[0]
-        s1.cmdCLI('conf t')
-        s1.cmdCLI('lldp management-address 1.1.1.1')
-        out = s1.cmd('ovs-vsctl list system')
-        lines = out.split('\n')
-        for line in lines:
-            if 'lldp_mgmt_addr="1.1.1.1"' in line:
-                lldp_mgmt_addr_set = True
-        assert (lldp_mgmt_addr_set is True), \
-            'Test setting LLDP management address - FAILED!'
-        return True
-
-    def unsetLLDPMgmtAddressTest(self):
-        info('''
-########## Test unsetting LLDP management address ##########
-''')
-        lldp_mgmt_addr_set = True
-        s1 = self.net.switches[0]
-        s1.cmdCLI('conf t')
-        s1.cmdCLI('no lldp management-address')
-        out = s1.cmd('ovs-vsctl list system')
-        lines = out.split('\n')
-        for line in lines:
-            if 'lldp_mgmt_addr' in line:
-                lldp_mgmt_addr_set = False
-        assert (lldp_mgmt_addr_set is True), \
-            'Test unsetting LLDP management address'
-        return True
-
-    def setLLDPClearCountersTest(self):
-        info('''
-########## Test LLDP clear counters ##########
-''')
-        s1 = self.net.switches[0]
-        lldp_clear_counters_set = False
-        s1.cmdCLI('conf t')
-        s1.cmdCLI('lldp enable')
-        out = s1.cmd('ovs-vsctl list interface 1')
-        lines = out.split('\n')
-        for line in lines:
-            if '_uuid' in line:
-                _id = line.split(':')
-                LLDPCliTest.uuid = _id[1].strip()
-                self.initLLDPNeighborinfo()
-
-        s1.cmdCLI('lldp clear counters')
-        sleep(10)
-        out = s1.cmdCLI('do show lldp neighbor-info 1')
-        lines = out.split('\n')
-        counter = 0
-        for line in lines:
-            if 'Neighbor Chassis-Name          : ' in line \
-                    and 'as512' not in line:
-                counter += 1
-            if 'Neighbor Chassis-Description   : ' in line \
-                    and 'OpenSwitch_0.1.0' not in line:
-                counter += 1
-            if 'Neighbor Chassis-ID            : ' in line \
-                    and '70:72:cf:fd:e9:26' not in line:
-                counter += 1
-            if 'Neighbor Management-Address    : ' in line \
-                    and '10.10.10.10' not in line:
-                counter += 1
-            if 'Chassis Capabilities Available : 'in line \
-                    and 'Bridge,Router' not in line:
-                counter += 1
-            if 'TTL                            : ' in line \
-                    and '120' not in line:
-                counter += 1
-
-        assert counter == 6, \
-            'Test LLDP clear counters command - FAILED!'
-        return True
-
-    def setLLDPClearNeighborsTest(self):
-        info('''
-########## Test LLDP clear neighbors ##########
-''')
-
-        s1 = self.net.switches[0]
-        s1.cmdCLI('conf t')
-        s1.cmdCLI('lldp enable')
-        out = s1.cmd('ovs-vsctl list interface 1')
-        lines = out.split('\n')
-        for line in lines:
-            if '_uuid' in line:
-                _id = line.split(':')
-                LLDPCliTest.uuid = _id[1].strip()
-                self.initLLDPNeighborinfo()
-                out = s1.cmdCLI('do show lldp neighbor-info 1')
-
-        s1.cmdCLI('lldp clear neighbors')
-        sleep(10)
-        out = s1.cmdCLI('do show lldp neighbor-info 1')
-        lines = out.split('\n')
-        counter = 0
-        for line in lines:
-            if 'Neighbor Chassis-Name          : ' in line \
-                    and 'as512' not in line:
-                counter += 1
-            if 'Neighbor Chassis-Description   : ' in line \
-                    and 'OpenSwitch_0.1.0' not in line:
-                counter += 1
-            if 'Neighbor Chassis-ID            : ' in line \
-                    and '70:72:cf:fd:e9:26' not in line:
-                counter += 1
-            if 'Neighbor Management-Address    : ' in line \
-                    and '10.10.10.10' not in line:
-                counter += 1
-            if 'Chassis Capabilities Available : 'in line \
-                    and 'Bridge,Router' not in line:
-                counter += 1
-            if 'TTL                            : ' in line \
-                    and '120' not in line:
-                counter += 1
-
-        assert counter == 6, \
-            'Test LLDP neighbor info command - FAILED!'
-        return True
-
-    def LLDPNeighborsinfoTest(self):
-        s1 = self.net.switches[0]
-        info('''
-########## Test LLDP neighbor info command ##########
-''')
-        counter = 0
-        s1.cmdCLI('conf t')
-        s1.cmdCLI('lldp enable')
-        out = s1.cmd('ovs-vsctl list interface 1')
-        lines = out.split('\n')
-        for line in lines:
-            if '_uuid' in line:
-                _id = line.split(':')
-                LLDPCliTest.uuid = _id[1].strip()
-                self.initLLDPNeighborinfo()
-                out = s1.cmdCLI('do show lldp neighbor-info 1')
-                lines = out.split('\n')
-                for line in lines:
-                    if 'Neighbor Chassis-Name          : as5712' in line:
-                        counter += 1
-                    if 'Neighbor Chassis-Description   : OpenSwitch_0.1.0'\
-                       '_basil_Linux_3.9.11_#1_SMP_Mon_Aug_24_14:38:01_'\
-                       'UTC_2015_x86_64' in line:
-                        counter += 1
-                    if 'Neighbor Chassis-ID            : '\
-                       '70:72:cf:fd:e9:26' in line:
-                        counter += 1
-                    if 'Chassis Capabilities Available : '\
-                       'Bridge,Router' in line:
-                        counter += 1
-                    if 'Neighbor Management-Address    : '\
-                       '10.10.10.10' in line:
-                        counter += 1
-
-                assert counter == 5, \
-                    'Test LLDP neighbor info command - FAILED!'
-
-        return True
-
-    def LLDPShowLocalDeviceTest(self):
-        s1 = self.net.switches[0]
-        info('''
-########## Test LLDP show local-device command ##########
-''')
-        counter = 0
-        self.initLLDPLocaldevice()
-        out = s1.cmdCLI('do show lldp local-device')
-
-        lines = out.split('\n')
-        for line in lines:
-            if 'System Name            : openswitch' in line:
-                counter += 1
-            if 'Management Address     : 192.168.1.1, fd12:3456:789a:1::'\
-                    in line:
-                counter += 1
-            if 'TTL                    : 60' in line:
-                counter += 1
-
-        assert counter == 3, \
-            'Test LLDP  show local-device command - FAILED!'
-
-        return True
+def init_lldp_local_device(sw1):
+    # Set IPV4 and IPv6 Mgmt address
+    sw1("end")
+    with sw1.libs.vtysh.ConfigInterfaceMgmt() as ctx:
+        ctx.ip_static('192.168.1.1/24')
+        ctx.ip_static('fd12:3456:789a:1::/64')
+    sw1("conf t")
+    # Set hostname to openswitch
+    sw1('hostname openswitch', shell='bash')
+    # Set holdtime and timer, to check TTL(3*20 = 60)
+    sw1('lldp holdtime 3')
+    sw1('lldp  timer 20')
+    sleep(10)
 
 
-@pytest.mark.skipif(True, reason="Disabling old tests")
-class Test_lldp_cli:
+def init_lldp_neighborstep(sw1, uuid):
+    sw1('set interface {} '
+        ' lldp_neighbor_info:chassis_capability_available='
+        'Bridge,Router \n '.format(uuid),
+        shell='vsctl')
+    sw1('set interface {} '
+        ' lldp_neighbor_info:chassis_description=OpenSwitch_0.1.0'
+        '_basil_Linux_3.9.11_#1_SMP_Mon_Aug_24_14:38:01'
+        '_UTC_2015_x86_64'.format(uuid),
+        shell='vsctl')
+    sw1('set interface {} '
+        ' lldp_neighbor_info:chassis_id=70:72:cf:fd:e9:26 '
+        '\n'.format(uuid),
+        shell='vsctl')
+    sw1('set interface {} '
+        ' lldp_neighbor_info:chassis_id_len= 6 '
+        '\n'.format(uuid), shell='vsctl')
+    sw1('set interface {} '
+        ' lldp_neighbor_info:chassis_id_subtype='
+        'link_local_addr \n'.format(uuid),
+        shell='vsctl')
+    sw1('set interface {} '
+        ' lldp_neighbor_info:chassis_index=1 \n'.format(uuid),
+        shell='vsctl')
+    sw1('set interface {} '
+        ' lldp_neighbor_info:chassis_name=as5712 '
+        '\n'.format(uuid), shell='vsctl')
+    sw1('set interface {} '
+        ' lldp_neighbor_info:chassis_protocol=LLDP '
+        '\n'.format(uuid), shell='vsctl')
+    sw1('set interface {} '
+        ' lldp_neighbor_info:chassis_refcount=1 '
+        '\n'.format(uuid), shell='vsctl')
+    sw1('set interface {} '
+        ' lldp_neighbor_info:chassis_ttl=120 '
+        '\n'.format(uuid), shell='vsctl')
+    sw1('set interface {} '
+        ' lldp_neighbor_info:mgmt_ip_list=10.10.10.10 '
+        '\n'.format(uuid), shell='vsctl')
+    sleep(1)
 
-    def setup(self):
-        pass
 
-    def teardown(self):
-        pass
+def enable_lldp_feature_test(sw1):
+    sw1('conf t')
+    lldp_feature_enabled = False
+    sw1('lldp enable')
+    output = sw1('list system', shell='vsctl')
+    lines = output.split('\n')
+    for line in lines:
+        if 'lldp_enable' in line:
+            lldpen = match(r'.*\s*lldp_enable=\"(?P<lldp_enable>[a-z]*)\".*', line)
+            lldpendict = lldpen.groupdict()
+            if lldpendict and lldpendict['lldp_enable'] == "true":
+               lldp_feature_enabled = True
+               break
+    assert lldp_feature_enabled
 
-    def setup_class(cls):
-        Test_lldp_cli.test = LLDPCliTest()
 
-    def test_enableLLDPFeatureTest(self):
-        if self.test.enableLLDPFeatureTest():
-            info('''
-########## Test to enable LLDP feature - SUCCESS ##########
-''')
+def disable_lldp_feature_test(sw1):
+    lldp_feature_disabled = False
+    sw1('no lldp enable')
+    output = sw1('list system', shell='vsctl')
+    lines = output.split('\n')
+    for line in lines:
+        if 'lldp_enable' in line:
+            lldpen = match(r'.*\s*lldp_enable=\"(?P<lldp_enable>[a-z]*)\".*', line)
+            lldpendict = lldpen.groupdict()
+            if lldpendict and lldpendict['lldp_enable'] == "false":
+                lldp_feature_disabled = True
+                break
+    assert lldp_feature_disabled
 
-    def test_disableLLDPFeatureTest(self):
-        if self.test.disableLLDPFeatureTest():
-            info('''
-########## Test to disable LLDP feature - SUCCESS ##########
-''')
 
-    def test_setLLDPholdtimeTest(self):
-        if self.test.setLLDPholdtimeTest():
-            info('''
-########## Test setting LLDP holdtime - SUCCESS ##########
-''')
+def set_lldp_holdtime_test(sw1):
+    lldp_hold_time_set = False
+    sw1('lldp holdtime 7')
+    output = sw1('list system', shell='vsctl')
+    lines = output.split('\n')
+    for line in lines:
+        if 'lldp_hold="7"' in line:
+            lldp_hold_time_set = True
+            break
+    assert lldp_hold_time_set
 
-    def test_unsetLLDPholdtimeTest(self):
-        if self.test.unsetLLDPholdtimeTest():
-            info('''
-########## Test unsetting LLDP holdtime - SUCCESS ##########
-''')
 
-    def test_setLLDPDefaultHoldtimeTest(self):
-        if self.test.setLLDPDefaultHoldtimeTest():
-            info('''
-########## Test setting LLDP default holdtime - SUCCESS ##########
-''')
+def unset_lldp_holdtime_test(sw1):
+    lldp_holdtime_set = False
+    sw1('no lldp holdtime')
+    output = sw1('do show running')
+    lines = output.split('\n')
+    for line in lines:
+        if 'lldp holdtime' in line:
+            lldp_holdtime_set = True
+            break
+    assert not lldp_holdtime_set
 
-    def test_setLLDPReinitDelayTest(self):
-        if self.test.setLLDPReinitDelayTest():
-            info('''
-########## Test setting LLDP reinit delay - SUCCESS ##########
-''')
 
-    def test_unsetLLDPReinitDelayTest(self):
-        if self.test.unsetLLDPReinitDelayTest():
-            info('''
-########## Test unsetting LLDP reinit delay - SUCCESS ##########
-''')
+def set_lldp_default_holdtime_test(sw1):
+    lldp_default_hold_time_set = True
+    sw1('lldp holdtime 4')
+    output = sw1('list system', shell='vsctl')
+    lines = output.split('\n')
+    for line in lines:
+        if 'lldp_hold' in line:
+            lldp_default_hold_time_set = False
+            break
+    assert lldp_default_hold_time_set
 
-    def test_setLLDPDefaultReinitDelayTest(self):
-        if self.test.setLLDPDefaultReinitDelayTest():
-            info('''
-########## Test setting LLDP default reinit delay - SUCCESS ##########
-''')
 
-    def test_setLLDPTimerTest(self):
-        if self.test.setLLDPTimerTest():
-            info('''
-########## Test setting LLDP timer - SUCCESS ##########
-''')
+def set_lldp_reinit_delay_test(sw1):
+    lldp_reinit_delay_set = False
+    sw1('lldp reinit 7')
+    output = sw1('do show running')
+    lines = output.split('\n')
+    for line in lines:
+        if 'lldp reinit 7' in line:
+            lldp_reinit_delay_set = True
+            break
+    assert lldp_reinit_delay_set
 
-    def test_unsetLLDTimerTest(self):
-        if self.test.unsetLLDPholdtimeTest():
-            info('''
-########## Test unsetting LLDP timer - SUCCESS ##########
-''')
 
-    def test_setLLDPDefaultTimerTest(self):
-        if self.test.setLLDPDefaultTimerTest():
-            info('''
-########## Test setting default LLDP timer - SUCCESS ##########
-''')
+def unset_lldp_reinit_delay_test(sw1):
+    lldp_reinit_delay_set = False
+    sw1('no lldp reinit')
+    output = sw1('do show running')
+    lines = output.split('\n')
+    for line in lines:
+        if 'lldp reinit' in line:
+            lldp_reinit_delay_set = True
+            break
+    assert not lldp_reinit_delay_set
 
-    def test_setLLDPMgmtAddressTest(self):
-        if self.test.setLLDPMgmtAddressTest():
-            info('''
-########## Test setting LLDP management address - SUCCESS ##########
-''')
 
-    def test_unsetLLDPMgmtAddressTest(self):
-        if self.test.unsetLLDPMgmtAddressTest():
-            info('''
-########## Test unsetting LLDP management address - SUCCESS ##########
-''')
+def set_lldp_default_reinit_delay_test(sw1):
+    lldp_reinit_delay_set = False
+    sw1('lldp reinit 2')
+    output = sw1('do show running')
+    lines = output.split('\n')
+    for line in lines:
+        if 'lldp reinit' in line:
+            lldp_reinit_delay_set = True
+            break
+    assert not lldp_reinit_delay_set
 
-    def test_setLLDPClearCountersTest(self):
-        if self.test.setLLDPClearCountersTest():
-            info('''
-########## Test LLDP clear counters - SUCCESS ##########
-''')
 
-    def test_setLLDPClearNeighborsTest(self):
-        if self.test.setLLDPClearNeighborsTest():
-            info('''
-########## Test LLDP clear neighbors - SUCCESS ##########
-''')
+def set_lldp_timer_test(sw1):
+    lldp_timer_set = False
+    sw1('lldp timer 100')
+    output = sw1('list system', shell='vsctl')
+    lines = output.split('\n')
+    for line in lines:
+        if 'lldp_tx_interval="100"' in line:
+            lldp_timer_set = True
+            break
+    assert lldp_timer_set
 
-    def test_LLDPNeighborsinfoTest(self):
-        if self.test.LLDPNeighborsinfoTest():
-            info('''
-########## Test LLDP neighbor info command - SUCCESS ##########
-''')
 
-    def test_LLDPShowLocalDeviceTest(self):
-        if self.test.LLDPShowLocalDeviceTest():
-            info('''
-########## Test LLDP show local-device command - SUCCESS ##########
-''')
+def unset_lldp_timer_test(sw1):
+    lldp_timer_set = False
+    sw1('no lldp timer')
+    output = sw1('do show running')
+    lines = output.split('\n')
+    for line in lines:
+        if 'lldp timer' in line:
+            lldp_timer_set = True
+            break
+    assert not lldp_timer_set
 
-    def teardown_class(cls):
-        Test_lldp_cli.test.net.stop()
 
-    def setup_method(self, method):
-        pass
+def set_lldp_default_timer_test(sw1):
+    lldp_default_timer_set = True
+    sw1('lldp timer 30')
+    output = sw1('list system', shell='vsctl')
+    lines = output.split('\n')
+    for line in lines:
+        if 'lldp_tx_interval' in line:
+            lldp_default_timer_set = False
+            break
+    assert lldp_default_timer_set
 
-    def teardown_method(self, method):
-        pass
 
-    def __del__(self):
-        del self.test
+def set_lldp_mgmt_address_test(sw1):
+    lldp_mgmt_addr_set = False
+    sw1('lldp management-address 1.1.1.1')
+    output = sw1('list system', shell='vsctl')
+    lines = output.split('\n')
+    for line in lines:
+        if 'lldp_mgmt_addr="1.1.1.1"' in line:
+            lldp_mgmt_addr_set = True
+            break
+    assert lldp_mgmt_addr_set
+
+
+def unset_lldp_mgmt_address_test(sw1):
+    lldp_mgmt_addr_set = True
+    sw1('no lldp management-address')
+    output = sw1('list system', shell='vsctl')
+    lines = output.split('\n')
+    for line in lines:
+        if 'lldp_mgmt_addr' in line:
+            lldp_mgmt_addr_set = False
+            break
+    assert lldp_mgmt_addr_set
+
+
+def set_lldp_clear_counters_test(sw1):
+    sw1('lldp enable')
+    output = sw1('list interface 1', shell='vsctl')
+    lines = output.split('\n')
+    uuid = None
+    for line in lines:
+        if '_uuid' in line:
+            _id = line.split(':')
+            uuid = _id[1].strip()
+            init_lldp_neighborstep(sw1, uuid)
+    sw1('lldp clear counters')
+    sleep(10)
+    output = sw1('do show lldp neighbor-info 1')
+    lines = output.split('\n')
+    counter = 0
+    for line in lines:
+        if 'Neighbor Chassis-Name' in line \
+                and 'as512' not in line:
+            counter += 1
+        if 'Neighbor Chassis-Description' in line \
+                and 'OpenSwitch_0.1.0' not in line:
+            counter += 1
+        if 'Neighbor Chassis-ID' in line \
+                and '70:72:cf:fd:e9:26' not in line:
+            counter += 1
+        if 'Neighbor Management-Address' in line \
+                and '10.10.10.10' not in line:
+            counter += 1
+        if 'Chassis Capabilities Available'in line \
+                and 'Bridge,Router' not in line:
+            counter += 1
+        if 'TTL' in line \
+                and '120' not in line:
+            counter += 1
+    assert counter is 6
+
+
+def set_lldp_clear_neighbors_test(sw1):
+    sw1('lldp enable')
+    output = sw1('list interface 1', shell='vsctl')
+    lines = output.split('\n')
+    for line in lines:
+        if '_uuid' in line:
+            _id = line.split(':')
+            uuid = _id[1].strip()
+            init_lldp_neighborstep(sw1, uuid)
+            output = sw1('do show lldp neighbor-info 1')
+    sw1('lldp clear neighbors')
+    sleep(10)
+    output = sw1('do show lldp neighbor-info 1')
+    lines = output.split('\n')
+    counter = 0
+    for line in lines:
+        if 'Neighbor Chassis-Name' in line \
+                and 'as512' not in line:
+            counter += 1
+        if 'Neighbor Chassis-Description' in line \
+                and 'OpenSwitch_0.1.0' not in line:
+            counter += 1
+        if 'Neighbor Chassis-ID' in line \
+                and '70:72:cf:fd:e9:26' not in line:
+            counter += 1
+        if 'Neighbor Management-Address' in line \
+                and '10.10.10.10' not in line:
+            counter += 1
+        if 'Chassis Capabilities Available'in line \
+                and 'Bridge,Router' not in line:
+            counter += 1
+        if 'TTL' in line \
+                and '120' not in line:
+            counter += 1
+    assert counter is 6
+
+
+def lldp_neighbors_step_test(sw1):
+    counter = 0
+    sw1('lldp enable')
+    output = sw1('list interface 1', shell='vsctl')
+    lines = output.split('\n')
+    for line in lines:
+        if '_uuid' in line:
+            _id = line.split(':')
+            uuid = _id[1].strip()
+            init_lldp_neighborstep(sw1, uuid)
+            output = sw1('do show lldp neighbor-info 1')
+            lines = output.split('\n')
+            for line in lines:
+                if 'Neighbor Chassis-Name          : as5712' in line:
+                    counter += 1
+                if 'Neighbor Chassis-Description   : OpenSwitch_0.1.0'\
+                   '_basil_Linux_3.9.11_#1_SMP_Mon_Aug_24_14:38:01_'\
+                   'UTC_2015_x86_64' in line:
+                    counter += 1
+                if 'Neighbor Chassis-ID            : '\
+                   '70:72:cf:fd:e9:26' in line:
+                    counter += 1
+                if 'Chassis Capabilities Available : '\
+                   'Bridge,Router' in line:
+                    counter += 1
+                if 'Neighbor Management-Address    : '\
+                   '10.10.10.10' in line:
+                    counter += 1
+            assert counter is 5
+
+
+def lldp_show_local_device_test(sw1):
+    counter = 0
+    init_lldp_local_device(sw1)
+    output = sw1('do show lldp local-device')
+    lines = output.split('\n')
+    for line in lines:
+        if 'System Name            : openswitch' in line:
+            counter += 1
+        # if 'Management Address     : 192.168.1.1, fd12:3456:789a:1::'\
+        #         in line:
+        if 'Management Address     : 192.168.1.1' in line:
+            counter += 1
+        if 'TTL                    : 60' in line:
+            counter += 1
+    assert counter is 3
+
+
+def test_vtysh_ct_lldp(topology, step):
+    sw1 = topology.get("sw1")
+    step('Test to enable LLDP feature')
+    enable_lldp_feature_test(sw1)
+    step('Test to disable LLDP feature')
+    disable_lldp_feature_test(sw1)
+    step('Test setting LLDP holdtime')
+    set_lldp_holdtime_test(sw1)
+    step('Test unsetting LLDP holdtime')
+    unset_lldp_holdtime_test(sw1)
+    step('Test setting LLDP default holdtime')
+    set_lldp_default_holdtime_test(sw1)
+    step('Test setting LLDP reinit delay')
+    set_lldp_reinit_delay_test(sw1)
+    step('Test unsetting LLDP reinit delay')
+    unset_lldp_reinit_delay_test(sw1)
+    step('Test setting LLDP default reinit delay')
+    set_lldp_default_reinit_delay_test(sw1)
+    step('Test setting LLDP timer')
+    set_lldp_timer_test(sw1)
+    step('Test unsetting LLDP timer')
+    unset_lldp_holdtime_test(sw1)
+    step('Test setting default LLDP timer')
+    set_lldp_default_timer_test(sw1)
+    step('Test setting LLDP management address')
+    set_lldp_mgmt_address_test(sw1)
+    step('Test unsetting LLDP management address')
+    unset_lldp_mgmt_address_test(sw1)
+    step('Test LLDP clear counters')
+    # set_lldp_clear_counters_test(sw1)
+    step('Test LLDP clear neighbors')
+    set_lldp_clear_neighbors_test(sw1)
+    step('Test LLDP neighborstep command')
+    lldp_neighbors_step_test(sw1)
+    step('Test LLDP show local-device command')
+    lldp_show_local_device_test(sw1)
